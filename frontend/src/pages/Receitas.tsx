@@ -188,16 +188,16 @@ export default function Receitas() {
     doc.setFont('helvetica', 'bold')
     doc.text(`Total: ${formatCurrency(kpis.total)} (${filtered.length} registros)`, marginX, y)
     y += 8
-    const cols = ['Obra', 'Cliente', 'Tipo', 'Data', 'Data Venc.', 'Status', 'Valor']
+    const cols = ['Obra', 'Cliente', 'Tipo', 'Data Venc.', 'Status', 'Valor']
     const rows = filtered.map((r) => [
-      r.obra, r.cliente, TIPO_LABEL[r.tipo] || r.tipo, r.data, r.data_venc, r.status,
+      r.obra, r.cliente, TIPO_LABEL[r.tipo] || r.tipo, r.data_venc, r.status,
       formatCurrency(r.valor),
     ])
     autoTable(doc, {
       startY: y,
       head: [cols],
       body: rows,
-      foot: [['', '', '', '', '', 'TOTAL', formatCurrency(kpis.total)]],
+      foot: [['', '', '', '', 'TOTAL', formatCurrency(kpis.total)]],
       theme: 'grid',
       tableWidth: 190,
       margin: { left: marginX, right: marginX },
@@ -206,9 +206,9 @@ export default function Receitas() {
       headStyles: { fillColor: [64, 64, 64], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
       footStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
       columnStyles: {
-        0: { cellWidth: 38 }, 1: { cellWidth: 58 }, 2: { cellWidth: 22 },
-        3: { cellWidth: 18, halign: 'center' }, 4: { cellWidth: 18, halign: 'center' },
-        5: { cellWidth: 16, halign: 'center' }, 6: { cellWidth: 20, halign: 'right' },
+        0: { cellWidth: 16 }, 1: { cellWidth: 94 }, 2: { cellWidth: 22 },
+        3: { cellWidth: 22, halign: 'center' }, 4: { cellWidth: 16, halign: 'center' },
+        5: { cellWidth: 20, halign: 'right' },
       },
     })
     doc.save(`receitas_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
