@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { RefreshCw, Menu, LogOut, ShieldCheck } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSync, useStatus } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
 import { useAuthStore } from '@/hooks/useAuth'
@@ -16,11 +17,15 @@ export function TopHeader() {
   const { data: status } = useStatus()
   const sync = useSync()
   const toggleSidebar = useFilterStore((s) => s.toggleSidebar)
+  const resetFilters = useFilterStore((s) => s.resetFilters)
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   function handleLogout() {
     logout()
+    queryClient.clear()
+    resetFilters()
     navigate('/login', { replace: true })
   }
 

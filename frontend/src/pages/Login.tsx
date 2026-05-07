@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore, loginRequest } from '@/hooks/useAuth'
+import { useFilterStore } from '@/hooks/useFilters'
 
 export default function Login() {
   useEffect(() => { document.title = 'Login | DashFinance' }, [])
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { setAuth, isAuthenticated } = useAuthStore()
+  const resetFilters = useFilterStore((s) => s.resetFilters)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,6 +26,8 @@ export default function Login() {
     setLoading(true)
     try {
       const res = await loginRequest(email, password)
+      queryClient.clear()
+      resetFilters()
       setAuth(res.user, res.access_token)
       navigate('/', { replace: true })
     } catch (err: unknown) {
