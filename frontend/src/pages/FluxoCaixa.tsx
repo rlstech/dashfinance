@@ -221,7 +221,7 @@ export default function FluxoCaixa() {
     dias = dias.map((d) => ({ ...d, saldo_banco: computeSaldoBanco(parseDate(d.data)!) }))
     dias = dias.map((d, i) => ({ ...d, saldo_anterior: i > 0 ? dias[i - 1].saldo_banco : saldoPrimeiroDia }))
     return dias
-  }, [apData, recData, saldoData, filters, empresaConfigs])
+  }, [apData, recData, saldoData, filters, saldoConfigs])
 
   const extratoData = useMemo(() => {
     if (!apData || !recData || !saldoData || diasData.length === 0) return []
@@ -308,7 +308,7 @@ export default function FluxoCaixa() {
       })
     })
     return result
-  }, [apData, recData, saldoData, filters, empresaConfigs, diasData])
+  }, [apData, recData, saldoData, filters, saldoConfigs, diasData])
 
   const extratoTotals = useMemo(() => {
     return extratoData.reduce((acc, row) => {
