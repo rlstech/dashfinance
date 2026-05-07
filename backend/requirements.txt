@@ -10,4 +10,3 @@ apscheduler>=3.10.0
 python-multipart>=0.0.9
 asyncpg>=0.29.0
 python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4

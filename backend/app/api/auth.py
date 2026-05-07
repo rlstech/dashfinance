@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import jwt
-from passlib.context import CryptContext
 
 from app.config import settings
 from app.deps.auth import get_current_user
@@ -11,7 +11,13 @@ from app.services import pg
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
 def _make_token(user_id: int) -> str:
@@ -22,7 +28,7 @@ def _make_token(user_id: int) -> str:
 @router.post("/login", response_model=Token)
 async def login(body: LoginRequest):
     user = await pg.get_user_by_email(body.email)
-    if not user or not user["is_active"] or not _pwd.verify(body.password, user["password_hash"]):
+    if not user or not user["is_active"] or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas")
     token = _make_token(user["id"])
     return Token(access_token=token, user=UserOut(**user))

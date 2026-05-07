@@ -1,13 +1,12 @@
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
-from passlib.context import CryptContext
 
+from app.api.auth import hash_password
 from app.deps.auth import require_admin
 from app.models.auth import UserCreate, UserOut, UserUpdate
 from app.services import pg
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 @router.get("/users", response_model=list[UserOut])
@@ -21,8 +20,7 @@ async def create_user(body: UserCreate, _: UserOut = Depends(require_admin)):
     existing = await pg.get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="E-mail já cadastrado")
-    hashed = _pwd.hash(body.password)
-    user = await pg.create_user(body.email, body.name, hashed, body.is_admin, body.empresas)
+    user = await pg.create_user(body.email, body.name, hash_password(body.password), body.is_admin, body.empresas)
     return UserOut(**user)
 
 
@@ -32,7 +30,7 @@ async def update_user(user_id: int, body: UserUpdate, _: UserOut = Depends(requi
     if body.name is not None:
         fields["name"] = body.name
     if body.password is not None:
-        fields["password_hash"] = _pwd.hash(body.password)
+        fields["password_hash"] = hash_password(body.password)
     if body.is_admin is not None:
         fields["is_admin"] = body.is_admin
     if body.is_active is not None:
