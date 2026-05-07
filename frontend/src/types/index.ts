@@ -73,6 +73,29 @@ export const EMPRESA_ABBR: Record<string, string> = {
   'CONSÓRCIO HMSJ': 'HMJ',
 }
 
+export interface User {
+  id: number
+  email: string
+  name: string
+  is_admin: boolean
+  is_active: boolean
+  empresas: string[]
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: User
+}
+
+export interface SaldoConfig {
+  empresa: string
+  banco: string
+  conta: string
+  enabled: boolean
+  saldo: number
+}
+
 export const TIPO_LABEL: Record<string, string> = {
   M: 'Mensal',
   P: 'Entrada',

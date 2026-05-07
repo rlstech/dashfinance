@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useFilterStore } from '@/hooks/useFilters'
 import { useFilterTree } from '@/hooks/useFinanceiro'
+import { useAuthStore } from '@/hooks/useAuth'
 import { MultiSelect } from './MultiSelect'
 import { DateRangeSelector } from './DateRangeSelector'
 import { RotateCcw, X } from 'lucide-react'
@@ -24,7 +25,7 @@ export function FilterSidebar({ showOrigem, showStatus, showVis }: FilterSidebar
   const sidebarOpen = useFilterStore((s) => s.sidebarOpen)
   const toggleSidebar = useFilterStore((s) => s.toggleSidebar)
   const { data: tree } = useFilterTree()
-
+  const { user } = useAuthStore()
   const handleNavClick = () => {
     if (window.innerWidth < 1024) {
       toggleSidebar()
@@ -97,6 +98,22 @@ export function FilterSidebar({ showOrigem, showStatus, showVis }: FilterSidebar
             {item.label}
           </NavLink>
         ))}
+        {user?.is_admin && (
+          <NavLink
+            to="/admin"
+            onClick={handleNavClick}
+            className={({ isActive }) =>
+              cn(
+                'block text-sm font-black uppercase tracking-widest py-2 px-3 transition-colors',
+                isActive
+                  ? 'bg-dark text-white'
+                  : 'text-muted-foreground hover:bg-bgBase hover:text-dark'
+              )
+            }
+          >
+            Admin
+          </NavLink>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-5">

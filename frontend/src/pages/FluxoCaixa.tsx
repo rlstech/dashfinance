@@ -6,9 +6,8 @@ import { FilterSidebar } from '@/components/filters/FilterSidebar'
 import { CashFlowChart } from '@/components/charts/CashFlowChart'
 import { DonutChart } from '@/components/charts/DonutChart'
 import { DataTable } from '@/components/tables/DataTable'
-import { useAP, useReceitas, useSaldoBanco } from '@/hooks/useFinanceiro'
+import { useAP, useReceitas, useSaldoBanco, useSaldoConfig } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
-import { useEmpresaConfig } from '@/hooks/useEmpresaConfig'
 import { formatCurrency, formatCompact, parseDate, compareDates } from '@/lib/formatters'
 import { EMPRESA_COLORS } from '@/types'
 
@@ -103,7 +102,7 @@ export default function FluxoCaixa() {
   const { data: recData, isLoading: recLoading } = useReceitas()
   const { data: saldoData, isLoading: saldoLoading } = useSaldoBanco()
   const filters = useFilterStore()
-  const empresaConfigs = useEmpresaConfig((s) => s.configs)
+  const { data: saldoConfigs } = useSaldoConfig()
   const isLoading = apLoading || recLoading || saldoLoading
 
   const diasData = useMemo(() => {
@@ -146,23 +145,24 @@ export default function FluxoCaixa() {
     const sortedDates = Object.keys(byDate).sort(compareDates)
 
     const SYNTHETIC_DATE = '01/01/1900'
+    // Empresas que têm alguma conta com saldo manual ativo
+    const manualEnabledEmpresas = new Set(
+      (saldoConfigs ?? []).filter((c) => c.enabled).map((c) => c.empresa)
+    )
     const saldoEfetivo = [
       ...saldoData.filter((r) => {
         if (emps.length > 0 && !emps.includes(r.empresa)) return false
         if (filters.bancos.length > 0 && !filters.bancos.includes(r.banco)) return false
         if (filters.contas.length > 0 && !filters.contas.includes(r.conta)) return false
-        if (empresaConfigs[r.empresa]?.enabled) return false
+        if (manualEnabledEmpresas.has(r.empresa)) return false
         return true
       }),
-      ...Object.entries(empresaConfigs).flatMap(([empresa, cfg]) => {
+      ...(saldoConfigs ?? []).flatMap((cfg) => {
         if (!cfg.enabled) return []
-        if (emps.length > 0 && !emps.includes(empresa)) return []
-        return Object.entries(cfg.saldos).flatMap(([bancoConta, saldo]) => {
-          const [banco, conta] = bancoConta.split('|')
-          if (filters.bancos.length > 0 && !filters.bancos.includes(banco)) return []
-          if (filters.contas.length > 0 && !filters.contas.includes(conta)) return []
-          return [{ empresa, banco, conta, data: SYNTHETIC_DATE, saldo }]
-        })
+        if (emps.length > 0 && !emps.includes(cfg.empresa)) return []
+        if (filters.bancos.length > 0 && !filters.bancos.includes(cfg.banco)) return []
+        if (filters.contas.length > 0 && !filters.contas.includes(cfg.conta)) return []
+        return [{ empresa: cfg.empresa, banco: cfg.banco, conta: cfg.conta, data: SYNTHETIC_DATE, saldo: cfg.saldo }]
       }),
     ]
 

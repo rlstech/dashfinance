@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
-import type { APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree } from '@/types'
+import type { APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig } from '@/types'
 
 export function useAP() {
   return useQuery<APRecord[]>({
@@ -53,5 +53,21 @@ export function useSync() {
       queryClient.invalidateQueries({ queryKey: ['status'] })
       queryClient.invalidateQueries({ queryKey: ['filter-tree'] })
     },
+  })
+}
+
+export function useSaldoConfig() {
+  return useQuery<SaldoConfig[]>({
+    queryKey: ['saldo-config'],
+    queryFn: () => api.get('/config/saldos'),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function useSaveSaldos() {
+  const queryClient = useQueryClient()
+  return useMutation<null, Error, SaldoConfig[]>({
+    mutationFn: (items) => api.put('/config/saldos', items),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['saldo-config'] }),
   })
 }

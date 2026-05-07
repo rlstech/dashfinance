@@ -1,7 +1,8 @@
-import { NavLink } from 'react-router-dom'
-import { RefreshCw, Menu } from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { RefreshCw, Menu, LogOut, ShieldCheck } from 'lucide-react'
 import { useSync, useStatus } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
+import { useAuthStore } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -15,6 +16,13 @@ export function TopHeader() {
   const { data: status } = useStatus()
   const sync = useSync()
   const toggleSidebar = useFilterStore((s) => s.toggleSidebar)
+  const { user, logout } = useAuthStore()
+  const navigate = useNavigate()
+
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <header className="px-6 pt-4 pb-0 block-border-b bg-white flex flex-col md:flex-row justify-between items-start md:items-end sticky top-0 z-30 gap-2 md:gap-0">
@@ -48,6 +56,21 @@ export function TopHeader() {
               {item.label}
             </NavLink>
           ))}
+          {user?.is_admin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                cn(
+                  'font-black uppercase tracking-widest pb-3 transition-colors border-b-4',
+                  isActive
+                    ? 'text-dark border-brand'
+                    : 'text-muted-foreground border-transparent hover:text-dark'
+                )
+              }
+            >
+              Admin
+            </NavLink>
+          )}
         </nav>
       </div>
 
@@ -57,14 +80,31 @@ export function TopHeader() {
             Atualizado {status.last_sync}
           </span>
         )}
-        <button
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending}
-          className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', sync.isPending && 'animate-spin')} />
-          <span className="hidden sm:inline">Sincronizar</span>
-        </button>
+
+        {user?.is_admin && (
+          <button
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending}
+            className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', sync.isPending && 'animate-spin')} />
+            <span className="hidden sm:inline">Sincronizar</span>
+          </button>
+        )}
+
+        <div className="flex items-center gap-2 border-2 border-dark px-3 py-1.5">
+          {user?.is_admin && <ShieldCheck className="h-3.5 w-3.5 text-brand flex-shrink-0" />}
+          <span className="text-xs font-black uppercase tracking-widest truncate max-w-[120px]" title={user?.name}>
+            {user?.name ?? ''}
+          </span>
+          <button
+            onClick={handleLogout}
+            title="Sair"
+            className="text-muted-foreground hover:text-brand transition-colors ml-1"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </header>
   )

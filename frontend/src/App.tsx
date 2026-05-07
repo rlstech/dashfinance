@@ -1,10 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MainLayout } from '@/components/layout/MainLayout'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import Receitas from '@/pages/Receitas'
 import Despesas from '@/pages/Despesas'
 import FluxoCaixa from '@/pages/FluxoCaixa'
 import Configuracoes from '@/pages/Configuracoes'
+import Login from '@/pages/Login'
+import Admin from '@/pages/Admin'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,12 +23,28 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<MainLayout />}>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Navigate to="/receitas" replace />} />
             <Route path="receitas" element={<Receitas />} />
             <Route path="despesas" element={<Despesas />} />
             <Route path="fluxo" element={<FluxoCaixa />} />
             <Route path="config" element={<Configuracoes />} />
+            <Route
+              path="admin"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <Admin />
+                </ProtectedRoute>
+              }
+            />
           </Route>
         </Routes>
       </BrowserRouter>

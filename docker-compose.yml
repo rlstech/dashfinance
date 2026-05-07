@@ -24,6 +24,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - TZ=America/Sao_Paulo
       - CORS_ORIGINS=["https://dash.railton.eu.org","http://localhost:5173"]
+      - PG_DSN=postgresql://postgres:Mfcd62!!Mfcd62Az@postgres_postgres:5432/dash
+      - JWT_SECRET=${JWT_SECRET}
     networks:
       - network_public
       - dashfinance_internal
