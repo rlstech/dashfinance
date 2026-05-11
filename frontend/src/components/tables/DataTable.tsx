@@ -4,7 +4,6 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   getPaginationRowModel,
-  getFilteredRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
@@ -18,37 +17,69 @@ interface DataTableProps<T> {
   pageSize?: number
   searchPlaceholder?: string
   footerRow?: ReactNode
+  searchTags?: string[]
+  onAddTag?: (tag: string) => void
+  onRemoveTag?: (index: number) => void
 }
 
-export function DataTable<T>({ data, columns, pageSize = 20, searchPlaceholder = 'Buscar...', footerRow }: DataTableProps<T>) {
+export function DataTable<T>({ data, columns, pageSize = 20, searchPlaceholder = 'Buscar...', footerRow, searchTags, onAddTag, onRemoveTag }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([])
-  const [globalFilter, setGlobalFilter] = useState('')
+  const [inputValue, setInputValue] = useState('')
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
+    autoResetPageIndex: true,
     initialState: { pagination: { pageSize } },
   })
 
   return (
     <div className="space-y-3">
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder={searchPlaceholder}
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="w-full h-10 pl-9 pr-3 border-2 border-dark bg-white text-sm font-bold uppercase focus:outline-none focus:border-brand"
-        />
+      <div className="space-y-2">
+        {searchTags && searchTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {searchTags.map((tag, i) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-dark text-white text-xs font-black uppercase tracking-wide">
+                {tag}
+                <button
+                  onClick={() => onRemoveTag?.(i)}
+                  className="ml-0.5 text-red-400 hover:text-red-200 font-black leading-none"
+                  aria-label={`Remover filtro ${tag}`}
+                >×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder={searchPlaceholder}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && inputValue.trim()) {
+                  onAddTag?.(inputValue.trim())
+                  setInputValue('')
+                }
+              }}
+              className="w-full h-10 pl-9 pr-3 border-2 border-dark bg-white text-sm font-bold uppercase focus:outline-none focus:border-brand"
+            />
+          </div>
+          {onAddTag && (
+            <button
+              onClick={() => { if (inputValue.trim()) { onAddTag(inputValue.trim()); setInputValue('') } }}
+              className="h-10 px-3 border-2 border-dark bg-dark text-white text-xs font-black uppercase hover:bg-brand hover:text-dark transition-colors"
+            >+</button>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -104,7 +135,7 @@ export function DataTable<T>({ data, columns, pageSize = 20, searchPlaceholder =
 
       {/* Pagination */}
       <div className="flex items-center justify-between text-xs text-muted-foreground font-bold uppercase">
-        <span>{table.getFilteredRowModel().rows.length} registros</span>
+        <span>{data.length} registros</span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => table.previousPage()}

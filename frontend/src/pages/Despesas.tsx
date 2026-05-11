@@ -85,6 +85,24 @@ export default function Despesas() {
     return { total, emissao, aConfirmar, pago }
   }, [filteredData])
 
+  const [searchTags, setSearchTags] = useState<string[]>([])
+  const addTag = (tag: string) => {
+    const t = tag.trim().toLowerCase()
+    if (t && !searchTags.includes(t)) setSearchTags((prev) => [...prev, t])
+  }
+  const removeTag = (i: number) => setSearchTags((prev) => prev.filter((_, idx) => idx !== i))
+
+  const tableData = useMemo(() => {
+    if (searchTags.length === 0) return filteredData
+    return filteredData.filter((r) => {
+      const text = [r.empresa, r.obra, r.data, r.fornecedor, r.banco, r.conta, r.categoria, r.origem]
+        .join(' ').toLowerCase()
+      return searchTags.every((tag) => text.includes(tag))
+    })
+  }, [filteredData, searchTags])
+
+  const tableTotal = useMemo(() => tableData.reduce((s, r) => s + r.valor, 0), [tableData])
+
   const [chartMode, setChartMode] = useState<'daily' | 'monthly'>('daily')
 
   const timelineData = useMemo(() => {
@@ -338,16 +356,19 @@ export default function Despesas() {
               </div>
             </div>
             <DataTable
-              data={filteredData}
+              data={tableData}
               columns={columns as ColumnDef<APRecord, unknown>[]}
-              searchPlaceholder="Buscar fornecedor, empresa..."
+              searchPlaceholder="Buscar e pressione Enter para filtrar..."
+              searchTags={searchTags}
+              onAddTag={addTag}
+              onRemoveTag={removeTag}
               footerRow={
                 <tr>
                   <td colSpan={6} className="px-4 py-3 text-xs font-black text-right text-gray-500 uppercase">
-                    Total do Período
+                    {searchTags.length > 0 ? 'Total Filtrado' : 'Total do Período'}
                   </td>
                   <td className="px-4 py-3 text-sm font-black text-right tabular-nums">
-                    {formatCurrency(kpis.total)}
+                    {formatCurrency(tableTotal)}
                   </td>
                 </tr>
               }

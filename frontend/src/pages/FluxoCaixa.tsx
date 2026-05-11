@@ -318,6 +318,32 @@ export default function FluxoCaixa() {
     }, { entrada: 0, saida: 0 })
   }, [extratoData])
 
+  const [searchTags, setSearchTags] = useState<string[]>([])
+  const addTag = (tag: string) => {
+    const t = tag.trim().toLowerCase()
+    if (t && !searchTags.includes(t)) setSearchTags((prev) => [...prev, t])
+  }
+  const removeTag = (i: number) => setSearchTags((prev) => prev.filter((_, idx) => idx !== i))
+
+  const taggedExtratoData = useMemo(() => {
+    if (searchTags.length === 0) return extratoData
+    return extratoData.filter((r) => {
+      if (r.tipo === 'Saldo Inicial') return true
+      const text = [r.data, r.tipo, r.descricao, r.obra, r.empresa, r.origem, r.banco, r.conta]
+        .join(' ').toLowerCase()
+      return searchTags.every((tag) => text.includes(tag))
+    })
+  }, [extratoData, searchTags])
+
+  const taggedExtratoTotals = useMemo(() => taggedExtratoData.reduce(
+    (acc, row) => {
+      if (row.tipo === 'Entrada') acc.entrada += row.entrada ?? 0
+      if (row.tipo === 'Saída') acc.saida += row.saida ?? 0
+      return acc
+    },
+    { entrada: 0, saida: 0 }
+  ), [taggedExtratoData])
+
   const kpis = useMemo(() => {
     const totalEntradas = diasData.reduce((s, d) => s + d.entradas, 0)
     const totalSaidas = diasData.reduce((s, d) => s + d.saidas, 0)
@@ -612,15 +638,21 @@ export default function FluxoCaixa() {
               </div>
             </div>
             <DataTable
-              data={extratoData}
+              data={taggedExtratoData}
               columns={extratoCols as ColumnDef<ExtratoRow, unknown>[]}
-              searchPlaceholder="Buscar descrição, obra, fornecedor..."
+              searchPlaceholder="Buscar e pressione Enter para filtrar..."
               pageSize={50}
+              searchTags={searchTags}
+              onAddTag={addTag}
+              onRemoveTag={removeTag}
               footerRow={
                 <tr className="border-t-2 border-dark bg-bgBase font-black">
-                  <td colSpan={5} className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">Total</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-emerald-700 font-black">{formatCurrency(extratoTotals.entrada)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-red-700 font-black">{formatCurrency(extratoTotals.saida)}</td>
+                  <td colSpan={4} className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">
+                    {searchTags.length > 0 ? 'Total Filtrado' : 'Total'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">—</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-emerald-700 font-black">{formatCurrency(taggedExtratoTotals.entrada)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-red-700 font-black">{formatCurrency(taggedExtratoTotals.saida)}</td>
                   <td></td>
                 </tr>
               }
