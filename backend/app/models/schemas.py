@@ -58,3 +58,32 @@ class FilterTree(BaseModel):
     bancos_por_empresa: dict[str, list[str]] = {}
     contas_por_empresa: dict[str, list[str]] = {}
     contas_por_empresa_banco: dict[str, dict[str, list[str]]] = {}
+
+
+# ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
+
+class FluxoMesRow(BaseModel):
+    mes: int
+    custo_previsto: float = 0.0
+    receita_prevista: float = 0.0
+    custo_real: float = 0.0         # TODO: query UAU
+    receita_realizada: float = 0.0  # TODO: query UAU
+
+
+class FluxoPlanejamentoResponse(BaseModel):
+    obra_codigo: str
+    ano: int
+    meses: list[FluxoMesRow]  # sempre 12 elementos
+
+
+class UpsertPlanejamentoIn(BaseModel):
+    obra_codigo: str
+    ano: int
+    mes: int
+    custo_previsto: float = 0.0
+    receita_prevista: float = 0.0
+
+
+class BulkImportResult(BaseModel):
+    imported: int
+    errors: list[str] = []

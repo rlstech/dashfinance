@@ -34,6 +34,18 @@ CREATE TABLE IF NOT EXISTS saldo_config (
     updated_by INTEGER REFERENCES users(id),
     UNIQUE (empresa, banco, conta)
 );
+
+CREATE TABLE IF NOT EXISTS fluxo_planejamento (
+    id               SERIAL PRIMARY KEY,
+    obra_codigo      VARCHAR(200)  NOT NULL,
+    ano              INTEGER       NOT NULL,
+    mes              INTEGER       NOT NULL CHECK (mes BETWEEN 1 AND 12),
+    custo_previsto   NUMERIC(15,2) NOT NULL DEFAULT 0,
+    receita_prevista NUMERIC(15,2) NOT NULL DEFAULT 0,
+    created_at       TIMESTAMP DEFAULT NOW(),
+    updated_at       TIMESTAMP DEFAULT NOW(),
+    UNIQUE (obra_codigo, ano, mes)
+);
 """
 
 
@@ -172,3 +184,57 @@ async def upsert_saldo(empresa: str, banco: str, conta: str, enabled: bool, sald
             """,
             empresa, banco, conta, enabled, saldo, updated_by,
         )
+
+
+# ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
+
+async def get_planejamento(obra_codigo: str, ano: int) -> list[dict]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT mes, custo_previsto, receita_prevista "
+            "FROM fluxo_planejamento WHERE obra_codigo=$1 AND ano=$2 ORDER BY mes",
+            obra_codigo, ano,
+        )
+    by_mes = {r["mes"]: dict(r) for r in rows}
+    return [
+        by_mes.get(m, {"mes": m, "custo_previsto": 0, "receita_prevista": 0})
+        for m in range(1, 13)
+    ]
+
+
+async def upsert_planejamento(
+    obra_codigo: str, ano: int, mes: int,
+    custo_previsto: float, receita_prevista: float,
+) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO fluxo_planejamento
+                (obra_codigo, ano, mes, custo_previsto, receita_prevista, updated_at)
+            VALUES ($1,$2,$3,$4,$5,NOW())
+            ON CONFLICT (obra_codigo, ano, mes) DO UPDATE
+                SET custo_previsto=$4, receita_prevista=$5, updated_at=NOW()
+            """,
+            obra_codigo, ano, mes, custo_previsto, receita_prevista,
+        )
+
+
+async def bulk_upsert_planejamento(items: list[dict]) -> int:
+    if not items:
+        return 0
+    async with _pool.acquire() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO fluxo_planejamento
+                (obra_codigo, ano, mes, custo_previsto, receita_prevista, updated_at)
+            VALUES ($1,$2,$3,$4,$5,NOW())
+            ON CONFLICT (obra_codigo, ano, mes) DO UPDATE
+                SET custo_previsto=$4, receita_prevista=$5, updated_at=NOW()
+            """,
+            [
+                (r["obra_codigo"], r["ano"], r["mes"],
+                 r["custo_previsto"], r["receita_prevista"])
+                for r in items
+            ],
+        )
+    return len(items)

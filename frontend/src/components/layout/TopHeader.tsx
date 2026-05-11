@@ -10,6 +10,7 @@ const navItems = [
   { to: '/receitas', label: 'Receitas' },
   { to: '/despesas', label: 'Despesas' },
   { to: '/fluxo', label: 'Fluxo de Caixa' },
+  { to: '/fluxo-obras', label: 'Fluxo Obras' },
   { to: '/config', label: 'Configurações' },
 ]
 

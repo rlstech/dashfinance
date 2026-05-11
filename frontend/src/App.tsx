@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import Receitas from '@/pages/Receitas'
 import Despesas from '@/pages/Despesas'
 import FluxoCaixa from '@/pages/FluxoCaixa'
+import FluxoObras from '@/pages/FluxoObras'
 import Configuracoes from '@/pages/Configuracoes'
 import Login from '@/pages/Login'
 import Admin from '@/pages/Admin'
@@ -36,6 +37,7 @@ function App() {
             <Route path="receitas" element={<Receitas />} />
             <Route path="despesas" element={<Despesas />} />
             <Route path="fluxo" element={<FluxoCaixa />} />
+            <Route path="fluxo-obras" element={<FluxoObras />} />
             <Route path="config" element={<Configuracoes />} />
             <Route
               path="admin"

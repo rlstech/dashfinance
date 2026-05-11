@@ -105,3 +105,32 @@ export const TIPO_LABEL: Record<string, string> = {
   R: 'Reforço',
   C: 'Chaves',
 }
+
+// ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
+
+export interface FluxoMesRow {
+  mes: number
+  custo_previsto: number
+  receita_prevista: number
+  custo_real: number
+  receita_realizada: number
+}
+
+export interface FluxoPlanejamentoResponse {
+  obra_codigo: string
+  ano: number
+  meses: FluxoMesRow[]
+}
+
+export interface UpsertPlanejamentoIn {
+  obra_codigo: string
+  ano: number
+  mes: number
+  custo_previsto: number
+  receita_prevista: number
+}
+
+export interface BulkImportResult {
+  imported: number
+  errors: string[]
+}
