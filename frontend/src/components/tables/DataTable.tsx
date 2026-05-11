@@ -4,6 +4,7 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   getPaginationRowModel,
+  getFilteredRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
@@ -29,11 +30,13 @@ export function DataTable<T>({ data, columns, pageSize = 20, searchPlaceholder =
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, globalFilter: inputValue },
     onSortingChange: setSorting,
+    onGlobalFilterChange: setInputValue,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     autoResetPageIndex: true,
     initialState: { pagination: { pageSize } },
   })
@@ -135,7 +138,7 @@ export function DataTable<T>({ data, columns, pageSize = 20, searchPlaceholder =
 
       {/* Pagination */}
       <div className="flex items-center justify-between text-xs text-muted-foreground font-bold uppercase">
-        <span>{data.length} registros</span>
+        <span>{table.getFilteredRowModel().rows.length} registros</span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => table.previousPage()}
