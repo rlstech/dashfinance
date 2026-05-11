@@ -77,6 +77,14 @@ export function useSaveSaldos() {
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
 
+export function useFluxoObrasTodas(ano: number) {
+  return useQuery<FluxoPlanejamentoResponse[]>({
+    queryKey: ['fluxo-obras-todas', ano],
+    queryFn: () => api.get('/fluxo-obras/todas', { ano }),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 export function useFluxoObras(obraCodigo: string | null, ano: number) {
   return useQuery<FluxoPlanejamentoResponse>({
     queryKey: ['fluxo-obras', obraCodigo, ano],

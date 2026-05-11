@@ -219,6 +219,28 @@ async def upsert_planejamento(
         )
 
 
+async def get_planejamento_bulk(obras: list[str], ano: int) -> dict[str, list[dict]]:
+    """Retorna {obra_codigo: [12 dicts]} para todas as obras em uma única query."""
+    if not obras:
+        return {}
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT obra_codigo, mes, custo_previsto, receita_prevista "
+            "FROM fluxo_planejamento WHERE obra_codigo = ANY($1) AND ano = $2",
+            obras, ano,
+        )
+    by_obra: dict[str, dict[int, dict]] = {}
+    for r in rows:
+        by_obra.setdefault(r["obra_codigo"], {})[r["mes"]] = dict(r)
+    return {
+        obra: [
+            by_obra.get(obra, {}).get(m, {"mes": m, "custo_previsto": 0, "receita_prevista": 0})
+            for m in range(1, 13)
+        ]
+        for obra in obras
+    }
+
+
 async def bulk_upsert_planejamento(items: list[dict]) -> int:
     if not items:
         return 0

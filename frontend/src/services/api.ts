@@ -54,7 +54,7 @@ class ApiClient {
     return response.json()
   }
 
-  async post<T>(path: string, body: unknown): Promise<T> {
+  async post<T>(path: string, body: unknown): Promise<T | null> {
     const url = new URL(`${this.baseUrl}${path}`, window.location.origin)
     const response = await fetch(url.toString(), {
       method: 'POST',
@@ -70,6 +70,7 @@ class ApiClient {
       const err = await response.json().catch(() => ({}))
       throw new Error(err.detail ?? `API Error: ${response.status}`)
     }
+    if (response.status === 204) return null
     return response.json()
   }
 

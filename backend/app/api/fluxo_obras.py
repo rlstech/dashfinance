@@ -13,10 +13,44 @@ from app.models.schemas import (
     UpsertPlanejamentoIn,
 )
 from app.services import pg
+from app.services.cache import get_cached
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fluxo-obras", tags=["fluxo-obras"])
+
+
+@router.get("/todas", response_model=list[FluxoPlanejamentoResponse])
+async def get_todas(ano: int, _: UserOut = Depends(get_current_user)):
+    """Retorna planejamento de todas as obras conhecidas para o ano dado."""
+    tree = await get_cached("dash:filters:tree")
+    if not tree:
+        return []
+    obras: list[str] = sorted({
+        obra
+        for obras_list in tree.get("obras_por_empresa", {}).values()
+        for obra in obras_list
+    })
+    if not obras:
+        return []
+    bulk = await pg.get_planejamento_bulk(obras, ano)
+    return [
+        FluxoPlanejamentoResponse(
+            obra_codigo=obra,
+            ano=ano,
+            meses=[
+                FluxoMesRow(
+                    mes=r["mes"],
+                    custo_previsto=float(r["custo_previsto"]),
+                    receita_prevista=float(r["receita_prevista"]),
+                    custo_real=0.0,         # TODO: query UAU
+                    receita_realizada=0.0,  # TODO: query UAU
+                )
+                for r in bulk[obra]
+            ],
+        )
+        for obra in obras
+    ]
 
 
 @router.get("/planejamento", response_model=FluxoPlanejamentoResponse)
