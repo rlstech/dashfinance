@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Upload, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Upload, X } from 'lucide-react'
 import {
   useCreateGrupo,
   useDeleteGrupo,
@@ -99,14 +99,16 @@ interface GrupoModalProps {
   grupos: GrupoObras[]
   todasObras: string[]
   onClose: () => void
+  initialEditando?: GrupoObras
+  startInCreate?: boolean
 }
 
-function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
-  const [editando, setEditando] = useState<GrupoObras | null>(null)
-  const [criando, setCriando] = useState(false)
-  const [nome, setNome] = useState('')
-  const [descricao, setDescricao] = useState('')
-  const [obrasSel, setObrasSel] = useState<string[]>([])
+function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreate }: GrupoModalProps) {
+  const [editando, setEditando] = useState<GrupoObras | null>(initialEditando ?? null)
+  const [criando, setCriando] = useState(startInCreate ?? false)
+  const [nome, setNome] = useState(initialEditando?.nome ?? '')
+  const [descricao, setDescricao] = useState(initialEditando?.descricao ?? '')
+  const [obrasSel, setObrasSel] = useState<string[]>(initialEditando?.obras ?? [])
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
@@ -132,6 +134,9 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
   function cancelForm() {
     setCriando(false)
     setEditando(null)
+    setNome('')
+    setDescricao('')
+    setObrasSel([])
   }
 
   function saveForm() {
@@ -139,19 +144,19 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
     if (editando) {
       updateGrupo.mutate(
         { id: editando.id, nome: nome.trim(), descricao: descricao || undefined, obras: obrasSel },
-        { onSuccess: () => setEditando(null) },
+        { onSuccess: () => onClose() },
       )
     } else {
       createGrupo.mutate(
         { nome: nome.trim(), descricao: descricao || undefined, obras: obrasSel },
-        { onSuccess: () => { setCriando(false); setNome(''); setDescricao(''); setObrasSel([]) } },
+        { onSuccess: () => onClose() },
       )
     }
   }
 
   function handleDelete(g: GrupoObras) {
     if (!confirm(`Excluir o grupo "${g.nome}"?`)) return
-    deleteGrupo.mutate(g.id)
+    deleteGrupo.mutate(g.id, { onSuccess: () => onClose() })
   }
 
   const showForm = criando || editando !== null
@@ -164,7 +169,9 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
       <div className="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col block-border shadow-hard">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-dark text-white">
-          <h2 className="text-sm font-black uppercase tracking-widest">Grupos de Análise</h2>
+          <h2 className="text-sm font-black uppercase tracking-widest">
+            {showForm ? (editando ? 'Editar Grupo' : 'Novo Grupo') : 'Grupos de Análise'}
+          </h2>
           <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <X className="h-4 w-4" />
           </button>
@@ -172,17 +179,14 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
 
         {/* Conteúdo */}
         <div className="overflow-y-auto flex-1 p-6 space-y-3">
-          {grupos.length === 0 && !showForm && (
+          {!showForm && grupos.length === 0 && (
             <p className="text-sm text-muted-foreground">Nenhum grupo criado. Clique em <strong>+ Novo Grupo</strong>.</p>
           )}
 
-          {grupos.map((g) => (
+          {!showForm && grupos.map((g) => (
             <div
               key={g.id}
-              className={cn(
-                'border-2 p-3 flex items-start justify-between gap-4',
-                editando?.id === g.id ? 'border-brand' : 'border-grid',
-              )}
+              className="border-2 border-grid p-3 flex items-start justify-between gap-4"
             >
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-widest truncate">{g.nome}</p>
@@ -192,18 +196,10 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
                 </p>
               </div>
               <div className="flex gap-3 flex-shrink-0">
-                <button
-                  onClick={() => startEdit(g)}
-                  disabled={isPending}
-                  className="text-xs font-bold text-brand hover:underline disabled:opacity-50"
-                >
+                <button onClick={() => startEdit(g)} disabled={isPending} className="text-xs font-bold text-brand hover:underline disabled:opacity-50">
                   Editar
                 </button>
-                <button
-                  onClick={() => handleDelete(g)}
-                  disabled={isPending}
-                  className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50"
-                >
+                <button onClick={() => handleDelete(g)} disabled={isPending} className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50">
                   Excluir
                 </button>
               </div>
@@ -211,10 +207,7 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
           ))}
 
           {showForm && (
-            <div className="border-2 border-brand p-4 space-y-3">
-              <p className="text-xs font-black uppercase tracking-widest">
-                {editando ? 'Editar Grupo' : 'Novo Grupo'}
-              </p>
+            <div className="space-y-3">
               <input
                 className="w-full text-xs border-2 border-dark px-3 py-2 focus:outline-none focus:border-brand"
                 placeholder="Nome do grupo *"
@@ -240,36 +233,114 @@ function GrupoModal({ grupos, todasObras, onClose }: GrupoModalProps) {
                   {(createGrupo.error ?? updateGrupo.error)?.message}
                 </p>
               )}
-              <div className="flex gap-2">
-                <button
-                  onClick={saveForm}
-                  disabled={!nome.trim() || isPending}
-                  className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark disabled:opacity-50 transition-colors"
-                >
-                  {isPending ? 'Salvando…' : 'Salvar'}
-                </button>
-                <button
-                  onClick={cancelForm}
-                  className="text-xs font-bold uppercase text-muted-foreground hover:text-dark px-4 py-2 transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        {!showForm && (
-          <div className="px-6 py-4 border-t-2 border-grid">
+        <div className="px-6 py-4 border-t-2 border-grid flex items-center gap-2">
+          {showForm ? (
+            <>
+              <button
+                onClick={saveForm}
+                disabled={!nome.trim() || isPending}
+                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark disabled:opacity-50 transition-colors"
+              >
+                {isPending ? 'Salvando…' : 'Salvar'}
+              </button>
+              <button
+                onClick={cancelForm}
+                className="text-xs font-bold uppercase text-muted-foreground hover:text-dark px-4 py-2 transition-colors"
+              >
+                Cancelar
+              </button>
+            </>
+          ) : (
             <button
               onClick={startCreate}
               className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors"
             >
               + Novo Grupo
             </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Card de grupo ─────────────────────────────────────────────────────────────
+
+interface GrupoCardProps {
+  grupo: GrupoObras
+  totais: { custoPrev: number; recPrev: number; saldo: number } | null
+  onAbrir: () => void
+  onEditar: () => void
+  onExcluir: () => void
+  deletePending: boolean
+}
+
+function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending }: GrupoCardProps) {
+  return (
+    <div className="bg-white block-border shadow-hard flex flex-col">
+      {/* Header do card */}
+      <div className="bg-dark text-white px-4 py-3">
+        <p className="text-xs font-black uppercase tracking-widest truncate">{grupo.nome}</p>
+        {grupo.descricao && (
+          <p className="text-xs text-white/60 mt-0.5 truncate">{grupo.descricao}</p>
+        )}
+      </div>
+
+      {/* Métricas */}
+      <div className="px-4 py-3 flex-1">
+        <p className="text-xs text-muted-foreground mb-3">{grupo.obras.length} obra(s)</p>
+        {totais !== null ? (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Custo Prev.</span>
+              <span className="font-bold tabular-nums">{formatCurrency(totais.custoPrev)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Rec. Prev.</span>
+              <span className="font-bold tabular-nums">{formatCurrency(totais.recPrev)}</span>
+            </div>
+            <div className="flex justify-between text-xs border-t-2 border-grid pt-2 mt-2">
+              <span className="font-black text-dark">Saldo</span>
+              <span className={cn('font-black tabular-nums', totais.saldo >= 0 ? 'text-teal-600' : 'text-red-500')}>
+                {formatCurrency(totais.saldo)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
           </div>
         )}
+      </div>
+
+      {/* Ações */}
+      <div className="px-4 py-3 border-t-2 border-grid flex items-center gap-3">
+        <button
+          onClick={onAbrir}
+          className="flex-1 text-xs font-black uppercase tracking-widest bg-dark text-white py-2 hover:bg-brand hover:text-dark transition-colors"
+        >
+          Abrir
+        </button>
+        <button
+          onClick={onEditar}
+          className="text-xs font-bold text-muted-foreground hover:text-brand transition-colors"
+        >
+          Editar
+        </button>
+        <button
+          onClick={onExcluir}
+          disabled={deletePending}
+          className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50"
+        >
+          Excluir
+        </button>
       </div>
     </div>
   )
@@ -290,12 +361,10 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
 
   const meses: FluxoMesRow[] = data.meses
 
-  // Totais anuais para o header
   const totalCustoPrev = meses.reduce((s, m) => s + m.custo_previsto, 0)
   const totalRecPrev = meses.reduce((s, m) => s + m.receita_prevista, 0)
   const saldoPrev = totalRecPrev - totalCustoPrev
 
-  // Fluxo acumulado
   let accPlan = 0
   let accReal = 0
   const acumuladoPlanejado = meses.map((m) => {
@@ -333,7 +402,6 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
 
   return (
     <div className="bg-white block-border shadow-hard">
-      {/* Header colapsável */}
       <button
         type="button"
         className="w-full flex items-center justify-between px-4 py-3 bg-dark text-white hover:bg-dark/90 transition-colors"
@@ -360,7 +428,6 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
         </div>
       </button>
 
-      {/* Tabela */}
       {!collapsed && (
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
@@ -377,7 +444,7 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
               </tr>
             </thead>
             <tbody>
-              {rowDefs.map((row, rowIdx) => {
+              {rowDefs.map((row) => {
                 const isAccumulated = row.kind === 'accumulated'
                 const rowBg = isAccumulated ? 'bg-bgBase' : 'bg-white'
                 return (
@@ -425,59 +492,63 @@ export default function FluxoObras() {
   }, [])
 
   const [ano, setAno] = useState(currentYear)
-  const [empresaFiltro, setEmpresaFiltro] = useState<string[]>([])
-  const [obrasSelecionadas, setObrasSelecionadas] = useState<string[]>([])
-  const [grupoSelecionado, setGrupoSelecionado] = useState<number | null>(null)
-  const [modalGrupos, setModalGrupos] = useState(false)
+  const [view, setView] = useState<'grupos' | 'obras'>('grupos')
+  const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
+  // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
+  const [modalState, setModalState] = useState<'novo' | GrupoObras | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: tree } = useFilterTree()
-  const { data: todasObras, isLoading } = useFluxoObrasTodas(ano)
-  const { data: grupos = [] } = useGruposObras()
+  const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(ano)
+  const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
   const savePlanejamento = useSavePlanejamento()
   const importarPlanilha = useImportarPlanilhaObras()
+  const deleteGrupo = useDeleteGrupo()
 
-  const empresas = tree?.empresas ?? []
+  // grupoAtivo sempre reflete o estado mais recente do servidor
+  const grupoAtivo = useMemo(
+    () => grupos.find((g) => g.id === grupoAtivoId) ?? null,
+    [grupos, grupoAtivoId],
+  )
 
-  const obrasDisponiveis = useMemo(() => {
-    const fonte = empresaFiltro.length > 0 ? empresaFiltro : (tree?.empresas ?? [])
-    return fonte.flatMap((e) => tree?.obras_por_empresa?.[e] ?? []).sort()
-  }, [tree, empresaFiltro])
+  const todasObrasDisponiveis = useMemo(
+    () => Object.values(tree?.obras_por_empresa ?? {}).flat().sort(),
+    [tree],
+  )
 
-  const todasObrasDisponiveis = useMemo(() => {
-    return Object.values(tree?.obras_por_empresa ?? {}).flat().sort()
-  }, [tree])
+  function calcTotaisGrupo(grupo: GrupoObras) {
+    if (!todasObras) return null
+    const set = new Set(grupo.obras)
+    const obras = todasObras.filter((o) => set.has(o.obra_codigo))
+    const custoPrev = obras.reduce((s, o) => s + o.meses.reduce((ms, m) => ms + m.custo_previsto, 0), 0)
+    const recPrev = obras.reduce((s, o) => s + o.meses.reduce((ms, m) => ms + m.receita_prevista, 0), 0)
+    return { custoPrev, recPrev, saldo: recPrev - custoPrev }
+  }
 
-  const obrasFiltradas = useMemo(() => {
-    if (!todasObras) return []
+  const obrasDoGrupo = useMemo(() => {
+    if (!todasObras || !grupoAtivo) return []
+    const set = new Set(grupoAtivo.obras)
+    return todasObras.filter((o) => set.has(o.obra_codigo))
+  }, [todasObras, grupoAtivo])
 
-    if (grupoSelecionado !== null) {
-      const grupo = grupos.find((g) => g.id === grupoSelecionado)
-      if (grupo) {
-        const setObras = new Set(grupo.obras)
-        return todasObras.filter((o) => setObras.has(o.obra_codigo))
-      }
-    }
+  function handleAbrirGrupo(g: GrupoObras) {
+    setGrupoAtivoId(g.id)
+    setView('obras')
+  }
 
-    let result = todasObras
+  function handleVoltar() {
+    setView('grupos')
+    setGrupoAtivoId(null)
+  }
 
-    if (empresaFiltro.length > 0) {
-      const obrasDasEmpresas = new Set(
-        empresaFiltro.flatMap((e) => tree?.obras_por_empresa?.[e] ?? []),
-      )
-      result = result.filter((o) => obrasDasEmpresas.has(o.obra_codigo))
-    }
-
-    if (obrasSelecionadas.length > 0) {
-      const setObras = new Set(obrasSelecionadas)
-      result = result.filter((o) => setObras.has(o.obra_codigo))
-    }
-
-    return result
-  }, [todasObras, tree, empresaFiltro, obrasSelecionadas, grupoSelecionado, grupos])
-
-  // Colapsar por padrão quando há muitas obras
-  const defaultCollapsed = (todasObras?.length ?? 0) > 5
+  function handleExcluirGrupo(g: GrupoObras) {
+    if (!confirm(`Excluir o grupo "${g.nome}"?`)) return
+    deleteGrupo.mutate(g.id, {
+      onSuccess: () => {
+        if (grupoAtivoId === g.id) handleVoltar()
+      },
+    })
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -494,155 +565,157 @@ export default function FluxoObras() {
     e.target.value = ''
   }
 
+  const seletor_ano = (
+    <select
+      className="text-xs font-bold uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white focus:outline-none focus:border-brand"
+      value={ano}
+      onChange={(e) => setAno(Number(e.target.value))}
+    >
+      {ANOS.map((y) => (
+        <option key={y} value={y}>{y}</option>
+      ))}
+    </select>
+  )
+
+  const modal = modalState !== null && (
+    <GrupoModal
+      grupos={grupos}
+      todasObras={todasObrasDisponiveis}
+      onClose={() => setModalState(null)}
+      initialEditando={typeof modalState === 'object' ? modalState : undefined}
+      startInCreate={modalState === 'novo'}
+    />
+  )
+
+  // ── Tela: galeria de grupos ───────────────────────────────────────────────
+
+  if (view === 'grupos') {
+    return (
+      <div className="flex h-full">
+        <div className="p-6 md:p-8 overflow-auto flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight text-dark">
+              Fluxo de Caixa Gerencial de Obras
+            </h1>
+            <div className="flex items-center gap-3">
+              {seletor_ano}
+              <button
+                onClick={() => setModalState('novo')}
+                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors"
+              >
+                + Novo Grupo
+              </button>
+            </div>
+          </div>
+
+          {loadingGrupos ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-52 w-full" />
+              ))}
+            </div>
+          ) : grupos.length === 0 ? (
+            <div className="bg-white block-border shadow-hard p-12 text-center">
+              <p className="text-sm font-bold text-muted-foreground mb-4">
+                Nenhum grupo criado ainda.
+              </p>
+              <button
+                onClick={() => setModalState('novo')}
+                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-6 py-2 hover:bg-brand hover:text-dark transition-colors"
+              >
+                + Criar primeiro grupo
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {grupos.map((g) => (
+                <GrupoCard
+                  key={g.id}
+                  grupo={g}
+                  totais={calcTotaisGrupo(g)}
+                  onAbrir={() => handleAbrirGrupo(g)}
+                  onEditar={() => setModalState(g)}
+                  onExcluir={() => handleExcluirGrupo(g)}
+                  deletePending={deleteGrupo.isPending}
+                />
+              ))}
+            </div>
+          )}
+
+          {modal}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Tela: detalhe do grupo ────────────────────────────────────────────────
+
   return (
     <div className="flex h-full">
       <div className="p-6 md:p-8 overflow-auto flex-1">
-
-        {/* Cabeçalho */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight text-dark">
-            Fluxo de Caixa Gerencial de Obras
-          </h1>
-
-          <div className="flex flex-col gap-3 items-end">
-            {/* Linha 1: grupo de análise */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                  Grupo de Análise
-                </span>
-                <select
-                  className={cn(
-                    'text-xs font-bold uppercase tracking-widest border-2 px-3 py-2 bg-white focus:outline-none transition-colors',
-                    grupoSelecionado !== null ? 'border-brand text-brand' : 'border-dark',
-                  )}
-                  value={grupoSelecionado ?? ''}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (val === '') {
-                      setGrupoSelecionado(null)
-                    } else {
-                      setGrupoSelecionado(Number(val))
-                      setEmpresaFiltro([])
-                      setObrasSelecionadas([])
-                    }
-                  }}
-                >
-                  <option value="">Todas as obras</option>
-                  {grupos.map((g) => (
-                    <option key={g.id} value={g.id}>{g.nome}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                onClick={() => setModalGrupos(true)}
-                className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors flex items-center gap-1.5"
-              >
-                <Pencil className="h-3 w-3" />
-                Gerenciar Grupos
-              </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleVoltar}
+              className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 hover:bg-brand hover:border-brand hover:text-dark transition-colors flex-shrink-0"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Voltar
+            </button>
+            <div>
+              <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight text-dark">
+                {grupoAtivo?.nome}
+              </h1>
+              {grupoAtivo?.descricao && (
+                <p className="text-xs text-muted-foreground mt-0.5">{grupoAtivo.descricao}</p>
+              )}
             </div>
+          </div>
 
-            {/* Linha 2: filtros */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div className={cn('flex flex-wrap items-end gap-3', grupoSelecionado !== null && 'opacity-40 pointer-events-none')}>
-                <MultiSelect
-                  label="Empresa"
-                  options={empresas}
-                  selected={empresaFiltro}
-                  onChange={(val) => { setEmpresaFiltro(val); setObrasSelecionadas([]) }}
-                  allLabel="Todas"
-                />
-
-                <MultiSelect
-                  label="Obra"
-                  options={obrasDisponiveis}
-                  selected={obrasSelecionadas}
-                  onChange={setObrasSelecionadas}
-                  allLabel="Todas"
-                />
-              </div>
-
-              {/* Seletor de ano */}
-              <select
-                className="text-xs font-bold uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white focus:outline-none focus:border-brand"
-                value={ano}
-                onChange={(e) => setAno(Number(e.target.value))}
-              >
-                {ANOS.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-
-              {/* Botão importar */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importarPlanilha.isPending}
-                className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                {importarPlanilha.isPending ? 'Importando…' : 'Importar Planilha'}
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => grupoAtivo && setModalState(grupoAtivo)}
+              className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors"
+            >
+              Editar Grupo
+            </button>
+            {seletor_ano}
+            <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importarPlanilha.isPending}
+              className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {importarPlanilha.isPending ? 'Importando…' : 'Importar Planilha'}
+            </button>
           </div>
         </div>
 
-        {/* Modal de grupos */}
-        {modalGrupos && (
-          <GrupoModal
-            grupos={grupos}
-            todasObras={todasObrasDisponiveis}
-            onClose={() => setModalGrupos(false)}
-          />
-        )}
-
-        {/* Conteúdo */}
-        {isLoading ? (
+        {loadingObras ? (
           <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
+            {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
-        ) : obrasFiltradas.length === 0 ? (
+        ) : obrasDoGrupo.length === 0 ? (
           <div className="bg-white block-border shadow-hard p-12 text-center text-muted-foreground text-sm font-bold">
-            {todasObras?.length === 0
-              ? 'Nenhuma obra encontrada. Execute uma sincronização para carregar os dados.'
-              : 'Nenhuma obra para os filtros selecionados.'}
+            Nenhuma obra neste grupo. Clique em <strong>Editar Grupo</strong> para adicionar obras.
           </div>
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              {grupoSelecionado !== null && (
-                <span className="inline-flex items-center gap-1 mr-2 px-2 py-0.5 bg-brand/10 text-brand font-bold border border-brand/30">
-                  {grupos.find((g) => g.id === grupoSelecionado)?.nome}
-                  <button
-                    onClick={() => setGrupoSelecionado(null)}
-                    className="hover:text-dark"
-                    title="Limpar grupo"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-              {obrasFiltradas.length} obra(s) · Clique no cabeçalho de cada obra para expandir/colapsar ·
+              {obrasDoGrupo.length} obra(s) · Clique no cabeçalho de cada obra para expandir/colapsar ·
               Clique nas células de <strong>Custo Previsto</strong> ou <strong>Receita Prevista</strong> para editar
             </p>
-            {obrasFiltradas.map((obra) => (
+            {obrasDoGrupo.map((obra) => (
               <ObraSection
                 key={obra.obra_codigo}
                 data={obra}
                 ano={ano}
                 savePending={savePlanejamento.isPending}
                 onSave={(payload) => savePlanejamento.mutate(payload)}
-                defaultCollapsed={defaultCollapsed}
+                defaultCollapsed={obrasDoGrupo.length > 5}
               />
             ))}
           </div>
@@ -653,6 +726,8 @@ export default function FluxoObras() {
             Erro ao salvar: {savePlanejamento.error?.message}
           </p>
         )}
+
+        {modal}
       </div>
     </div>
   )
