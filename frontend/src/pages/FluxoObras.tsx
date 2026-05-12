@@ -9,6 +9,7 @@ import {
 import { formatCurrency } from '@/lib/formatters'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { MultiSelect } from '@/components/filters/MultiSelect'
 import type { FluxoMesRow, FluxoPlanejamentoResponse, UpsertPlanejamentoIn } from '@/types'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -239,6 +240,7 @@ export default function FluxoObras() {
 
   const [ano, setAno] = useState(currentYear)
   const [empresaFiltro, setEmpresaFiltro] = useState<string[]>([])
+  const [obrasSelecionadas, setObrasSelecionadas] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: tree } = useFilterTree()
@@ -248,14 +250,29 @@ export default function FluxoObras() {
 
   const empresas = tree?.empresas ?? []
 
+  const obrasDisponiveis = useMemo(() => {
+    const fonte = empresaFiltro.length > 0 ? empresaFiltro : (tree?.empresas ?? [])
+    return fonte.flatMap((e) => tree?.obras_por_empresa?.[e] ?? []).sort()
+  }, [tree, empresaFiltro])
+
   const obrasFiltradas = useMemo(() => {
     if (!todasObras) return []
-    if (empresaFiltro.length === 0) return todasObras
-    const obrasDasEmpresas = new Set(
-      empresaFiltro.flatMap((e) => tree?.obras_por_empresa?.[e] ?? []),
-    )
-    return todasObras.filter((o) => obrasDasEmpresas.has(o.obra_codigo))
-  }, [todasObras, tree, empresaFiltro])
+    let result = todasObras
+
+    if (empresaFiltro.length > 0) {
+      const obrasDasEmpresas = new Set(
+        empresaFiltro.flatMap((e) => tree?.obras_por_empresa?.[e] ?? []),
+      )
+      result = result.filter((o) => obrasDasEmpresas.has(o.obra_codigo))
+    }
+
+    if (obrasSelecionadas.length > 0) {
+      const setObras = new Set(obrasSelecionadas)
+      result = result.filter((o) => setObras.has(o.obra_codigo))
+    }
+
+    return result
+  }, [todasObras, tree, empresaFiltro, obrasSelecionadas])
 
   // Colapsar por padrão quando há muitas obras
   const defaultCollapsed = (todasObras?.length ?? 0) > 5
@@ -285,18 +302,22 @@ export default function FluxoObras() {
             Fluxo de Caixa Gerencial de Obras
           </h1>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Filtro de empresa */}
-            <select
-              className="text-xs font-bold uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white focus:outline-none focus:border-brand max-w-[180px]"
-              value={empresaFiltro[0] ?? ''}
-              onChange={(e) => setEmpresaFiltro(e.target.value ? [e.target.value] : [])}
-            >
-              <option value="">Todas as Empresas</option>
-              {empresas.map((emp) => (
-                <option key={emp} value={emp}>{emp}</option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-end gap-3">
+            <MultiSelect
+              label="Empresa"
+              options={empresas}
+              selected={empresaFiltro}
+              onChange={(val) => { setEmpresaFiltro(val); setObrasSelecionadas([]) }}
+              allLabel="Todas"
+            />
+
+            <MultiSelect
+              label="Obra"
+              options={obrasDisponiveis}
+              selected={obrasSelecionadas}
+              onChange={setObrasSelecionadas}
+              allLabel="Todas"
+            />
 
             {/* Seletor de ano */}
             <select
@@ -339,7 +360,7 @@ export default function FluxoObras() {
           <div className="bg-white block-border shadow-hard p-12 text-center text-muted-foreground text-sm font-bold">
             {todasObras?.length === 0
               ? 'Nenhuma obra encontrada. Execute uma sincronização para carregar os dados.'
-              : 'Nenhuma obra para a empresa selecionada.'}
+              : 'Nenhuma obra para os filtros selecionados.'}
           </div>
         ) : (
           <div className="space-y-4">

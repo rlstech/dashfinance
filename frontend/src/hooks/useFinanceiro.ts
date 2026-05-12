@@ -98,10 +98,10 @@ export function useSavePlanejamento() {
   const queryClient = useQueryClient()
   return useMutation<null, Error, UpsertPlanejamentoIn>({
     mutationFn: (body) => api.post('/fluxo-obras/planejamento', body),
-    onSuccess: (_data, variables) =>
-      queryClient.invalidateQueries({
-        queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano],
-      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas', variables.ano] })
+      queryClient.invalidateQueries({ queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano] })
+    },
   })
 }
 
