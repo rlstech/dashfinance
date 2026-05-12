@@ -113,6 +113,8 @@ export interface GrupoObras {
   nome: string
   descricao?: string
   obras: string[]
+  percentuais: Record<string, number>
+  obra_especial?: string | null
 }
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────

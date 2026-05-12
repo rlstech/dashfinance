@@ -14,12 +14,18 @@ async def list_grupos(_: UserOut = Depends(get_current_user)):
 
 @router.post("", response_model=GrupoObrasOut, status_code=201)
 async def create_grupo(body: GrupoObrasIn, user: UserOut = Depends(get_current_user)):
-    return await pg.create_grupo(body.nome, body.descricao, body.obras, user.id)
+    return await pg.create_grupo(
+        body.nome, body.descricao, body.obras,
+        body.percentuais, body.obra_especial, user.id,
+    )
 
 
 @router.put("/{grupo_id}", response_model=GrupoObrasOut)
 async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depends(get_current_user)):
-    result = await pg.update_grupo(grupo_id, body.nome, body.descricao, body.obras, user.id)
+    result = await pg.update_grupo(
+        grupo_id, body.nome, body.descricao, body.obras,
+        body.percentuais, body.obra_especial, user.id,
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Grupo não encontrado")
     return result

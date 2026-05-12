@@ -110,6 +110,8 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [nome, setNome] = useState(initialEditando?.nome ?? '')
   const [descricao, setDescricao] = useState(initialEditando?.descricao ?? '')
   const [obrasSel, setObrasSel] = useState<string[]>(initialEditando?.obras ?? [])
+  const [percentuais, setPercentuais] = useState<Record<string, number>>(initialEditando?.percentuais ?? {})
+  const [obraEspecial, setObraEspecial] = useState<string>(initialEditando?.obra_especial ?? '')
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null)
   const [buscaObra, setBuscaObra] = useState('')
 
@@ -129,13 +131,15 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     return termo ? unicas.filter((o) => o.toLowerCase().includes(termo)) : unicas
   }, [obrasPorEmpresa, empresaFiltro, buscaObra])
 
+  function resetForm() {
+    setNome(''); setDescricao(''); setObrasSel([])
+    setPercentuais({}); setObraEspecial('')
+    setEmpresaFiltro(null); setBuscaObra('')
+  }
+
   function startCreate() {
     setEditando(null)
-    setNome('')
-    setDescricao('')
-    setObrasSel([])
-    setEmpresaFiltro(null)
-    setBuscaObra('')
+    resetForm()
     setCriando(true)
   }
 
@@ -144,6 +148,8 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setNome(g.nome)
     setDescricao(g.descricao ?? '')
     setObrasSel(g.obras)
+    setPercentuais(g.percentuais ?? {})
+    setObraEspecial(g.obra_especial ?? '')
     setEmpresaFiltro(null)
     setBuscaObra('')
     setEditando(g)
@@ -152,25 +158,22 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   function cancelForm() {
     setCriando(false)
     setEditando(null)
-    setNome('')
-    setDescricao('')
-    setObrasSel([])
-    setEmpresaFiltro(null)
-    setBuscaObra('')
+    resetForm()
   }
 
   function saveForm() {
     if (!nome.trim()) return
+    const payload = {
+      nome: nome.trim(),
+      descricao: descricao || undefined,
+      obras: obrasSel,
+      percentuais,
+      obra_especial: obraEspecial || undefined,
+    }
     if (editando) {
-      updateGrupo.mutate(
-        { id: editando.id, nome: nome.trim(), descricao: descricao || undefined, obras: obrasSel },
-        { onSuccess: () => onClose() },
-      )
+      updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
     } else {
-      createGrupo.mutate(
-        { nome: nome.trim(), descricao: descricao || undefined, obras: obrasSel },
-        { onSuccess: () => onClose() },
-      )
+      createGrupo.mutate(payload, { onSuccess: () => onClose() })
     }
   }
 
@@ -306,41 +309,81 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                   {obrasVisiveis.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-muted-foreground text-center">Nenhuma obra encontrada.</p>
                   ) : (
-                    obrasVisiveis.map((obra) => (
-                      <label
-                        key={obra}
-                        className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-brand/5 border-b border-grid/50 last:border-0 select-none"
-                      >
-                        <input
-                          type="checkbox"
-                          className="accent-brand flex-shrink-0"
-                          checked={obrasSel.includes(obra)}
-                          onChange={() => toggleObra(obra)}
-                        />
-                        <span className="text-xs text-dark truncate">{obra}</span>
-                      </label>
-                    ))
+                    obrasVisiveis.map((obra) => {
+                      const checked = obrasSel.includes(obra)
+                      return (
+                        <div
+                          key={obra}
+                          className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-brand/5 border-b border-grid/50 last:border-0"
+                        >
+                          <input
+                            type="checkbox"
+                            className="accent-brand flex-shrink-0 cursor-pointer"
+                            checked={checked}
+                            onChange={() => toggleObra(obra)}
+                          />
+                          <span
+                            className="text-xs text-dark truncate flex-1 cursor-pointer select-none"
+                            onClick={() => toggleObra(obra)}
+                          >
+                            {obra}
+                          </span>
+                          {checked && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                className="w-16 text-xs text-right border border-grid px-1.5 py-0.5 focus:outline-none focus:border-brand"
+                                placeholder="0"
+                                value={percentuais[obra] ?? ''}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value)
+                                  setPercentuais((prev) => ({ ...prev, [obra]: isNaN(v) ? 0 : v }))
+                                }}
+                              />
+                              <span className="text-[10px] text-muted-foreground">%</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
                   )}
                 </div>
 
                 {/* Ações da lista */}
                 <div className="flex items-center gap-3 px-3 py-2 border-t border-grid bg-bgBase">
-                  <button
-                    type="button"
-                    onClick={selecionarVisiveis}
-                    className="text-[10px] font-bold text-brand hover:underline"
-                  >
+                  <button type="button" onClick={selecionarVisiveis} className="text-[10px] font-bold text-brand hover:underline">
                     Selecionar todas visíveis
                   </button>
                   <span className="text-muted-foreground/40">·</span>
-                  <button
-                    type="button"
-                    onClick={limparSelecao}
-                    className="text-[10px] font-bold text-muted-foreground hover:text-red-500"
-                  >
+                  <button type="button" onClick={limparSelecao} className="text-[10px] font-bold text-muted-foreground hover:text-red-500">
                     Limpar seleção
                   </button>
                 </div>
+              </div>
+
+              {/* Obra Especial */}
+              <div className="border-2 border-grid p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-dark">Obra Especial</span>
+                </div>
+                <select
+                  className="w-full text-xs border-2 border-grid px-3 py-2 focus:outline-none focus:border-brand bg-white"
+                  value={obraEspecial}
+                  onChange={(e) => setObraEspecial(e.target.value)}
+                >
+                  <option value="">— Nenhuma —</option>
+                  {obrasSel.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+                {obraEspecial && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Esta obra terá sua receita calculada como soma ponderada (%) das receitas das demais obras do grupo.
+                  </p>
+                )}
               </div>
 
               {(createGrupo.isError || updateGrupo.isError) && (
@@ -469,9 +512,10 @@ interface ObraSectionProps {
   savePending: boolean
   onSave: (payload: UpsertPlanejamentoIn) => void
   defaultCollapsed: boolean
+  especial?: { recRealizadaPct: number[] }
 }
 
-function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraSectionProps) {
+function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especial }: ObraSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   const meses: FluxoMesRow[] = data.meses
@@ -486,8 +530,10 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
     accPlan += m.receita_prevista - m.custo_previsto
     return accPlan
   })
-  const acumuladoReal = meses.map((m) => {
-    accReal += m.receita_realizada - m.custo_real
+  // Para obra especial, fluxo real usa Receita UAU; para normal, usa receita_realizada
+  const recRealParaAcc = especial ? meses.map((m) => m.receita_realizada) : meses.map((m) => m.receita_realizada)
+  const acumuladoReal = meses.map((m, i) => {
+    accReal += recRealParaAcc[i] - m.custo_real
     return accReal
   })
 
@@ -506,20 +552,39 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
     | { label: string; kind: 'editable'; field: 'custo_previsto' | 'receita_prevista'; values: number[] }
     | { label: string; kind: 'readonly' | 'accumulated'; values: number[] }
 
-  const rowDefs: RowDef[] = [
-    { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
-    { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
-    { label: 'Receita Prevista', kind: 'editable', field: 'receita_prevista', values: meses.map((m) => m.receita_prevista) },
-    { label: 'Receita Realizada', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
-    { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
-    { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
-  ]
+  const rowDefs: RowDef[] = especial
+    ? [
+        { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
+        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
+        { label: 'Receita Prevista (%)', kind: 'readonly', values: meses.map((m) => m.receita_prevista) },
+        { label: 'Receita Realizada (%)', kind: 'readonly', values: especial.recRealizadaPct },
+        { label: 'Receita UAU', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
+        { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
+        { label: 'Fluxo Acumulado Real (UAU)', kind: 'accumulated', values: acumuladoReal },
+      ]
+    : [
+        { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
+        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
+        { label: 'Receita Prevista', kind: 'editable', field: 'receita_prevista', values: meses.map((m) => m.receita_prevista) },
+        { label: 'Receita Realizada', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
+        { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
+        { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
+      ]
+
+  const headerCls = especial
+    ? 'w-full flex items-center justify-between px-4 py-3 bg-brand text-dark hover:bg-brand/90 transition-colors'
+    : 'w-full flex items-center justify-between px-4 py-3 bg-dark text-white hover:bg-dark/90 transition-colors'
+  const headerTextCls = especial ? 'text-dark/60' : 'text-white/60'
+  const headerValCls = especial ? 'text-dark font-bold' : 'text-white font-bold'
+  const saldoCls = especial
+    ? cn('font-black', saldoPrev >= 0 ? 'text-dark' : 'text-red-700')
+    : cn('font-black', saldoPrev >= 0 ? 'text-teal-300' : 'text-red-400')
 
   return (
     <div className="bg-white block-border shadow-hard">
       <button
         type="button"
-        className="w-full flex items-center justify-between px-4 py-3 bg-dark text-white hover:bg-dark/90 transition-colors"
+        className={headerCls}
         onClick={() => setCollapsed((c) => !c)}
       >
         <div className="flex items-center gap-3">
@@ -529,15 +594,20 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
           <span className="text-xs font-black uppercase tracking-widest text-left">
             {data.obra_codigo}
           </span>
+          {especial && (
+            <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">
+              Obra Especial
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-6 text-xs tabular-nums">
-          <span className="hidden sm:inline text-white/60">
-            Custo Prev: <span className="text-white font-bold">{formatCurrency(totalCustoPrev)}</span>
+          <span className={cn('hidden sm:inline', headerTextCls)}>
+            Custo Prev: <span className={headerValCls}>{formatCurrency(totalCustoPrev)}</span>
           </span>
-          <span className="hidden sm:inline text-white/60">
-            Rec Prev: <span className="text-white font-bold">{formatCurrency(totalRecPrev)}</span>
+          <span className={cn('hidden sm:inline', headerTextCls)}>
+            Rec Prev: <span className={headerValCls}>{formatCurrency(totalRecPrev)}</span>
           </span>
-          <span className={cn('font-black', saldoPrev >= 0 ? 'text-teal-300' : 'text-red-400')}>
+          <span className={saldoCls}>
             Saldo: {formatCurrency(saldoPrev)}
           </span>
         </div>
@@ -603,13 +673,22 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
 
 interface ConsolidadoGrupoProps {
   obras: FluxoPlanejamentoResponse[]
+  obraEspecial?: string
 }
 
-function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
+function ConsolidadoGrupo({ obras, obraEspecial }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
+  // Custo Real: soma de TODAS as obras
   const custoReal = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
-  const recReal   = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
+  // Receita: SOMENTE a obra especial (Receita UAU); se não houver especial, soma tudo
+  const recReal = Array.from({ length: 12 }, (_, i) => {
+    if (obraEspecial) {
+      const esp = obras.find((o) => o.obra_codigo === obraEspecial)
+      return esp ? esp.meses[i].receita_realizada : 0
+    }
+    return obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0)
+  })
   const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
 
   let acc = 0
@@ -781,10 +860,15 @@ export default function FluxoObras() {
     return todasObras.filter((o) => set.has(o.obra_codigo))
   }, [todasObras, grupoAtivo])
 
-  const obrasParaRender = useMemo(() => {
-    if (!dadosReais) return obrasDoGrupo
-    const realMap = new Map(dadosReais.map((r) => [r.obra_codigo, r.meses]))
-    return obrasDoGrupo.map((obra) => {
+  type ObraRender = FluxoPlanejamentoResponse & {
+    _isEspecial?: boolean
+    _recRealizadaPct?: number[]
+  }
+
+  const obrasParaRender = useMemo((): ObraRender[] => {
+    // 1. Merge com dados reais
+    const realMap = dadosReais ? new Map(dadosReais.map((r) => [r.obra_codigo, r.meses])) : new Map()
+    let result: ObraRender[] = obrasDoGrupo.map((obra) => {
       const real = realMap.get(obra.obra_codigo)
       if (!real) return obra
       return {
@@ -796,7 +880,32 @@ export default function FluxoObras() {
         })),
       }
     })
-  }, [obrasDoGrupo, dadosReais])
+
+    // 2. Calcular receitas da obra especial
+    const especial = grupoAtivo?.obra_especial
+    const pcts = grupoAtivo?.percentuais ?? {}
+    if (especial && result.some((o) => o.obra_codigo === especial)) {
+      const regulares = result.filter((o) => o.obra_codigo !== especial)
+      result = result.map((obra) => {
+        if (obra.obra_codigo !== especial) return obra
+        const recPrevCalc = Array.from({ length: 12 }, (_, i) =>
+          regulares.reduce((s, o) => s + o.meses[i].receita_prevista * ((pcts[o.obra_codigo] ?? 0) / 100), 0),
+        )
+        const recRealPct = Array.from({ length: 12 }, (_, i) =>
+          regulares.reduce((s, o) => s + o.meses[i].receita_realizada * ((pcts[o.obra_codigo] ?? 0) / 100), 0),
+        )
+        return {
+          ...obra,
+          meses: obra.meses.map((m, i) => ({ ...m, receita_prevista: recPrevCalc[i] })),
+          _isEspecial: true,
+          _recRealizadaPct: recRealPct,
+        }
+      })
+    }
+
+    // 3. Obra especial sempre por último
+    return result.sort((a, b) => (a._isEspecial ? 1 : 0) - (b._isEspecial ? 1 : 0))
+  }, [obrasDoGrupo, dadosReais, grupoAtivo])
 
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
@@ -1056,10 +1165,13 @@ export default function FluxoObras() {
                 savePending={savePlanejamento.isPending}
                 onSave={(payload) => savePlanejamento.mutate(payload)}
                 defaultCollapsed={obrasDoGrupo.length > 5}
+                especial={obra._isEspecial && obra._recRealizadaPct
+                  ? { recRealizadaPct: obra._recRealizadaPct }
+                  : undefined}
               />
             ))}
 
-            <ConsolidadoGrupo obras={obrasParaRender} />
+            <ConsolidadoGrupo obras={obrasParaRender} obraEspecial={grupoAtivo?.obra_especial ?? undefined} />
           </div>
         )}
 

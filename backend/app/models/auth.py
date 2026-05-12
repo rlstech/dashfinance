@@ -57,6 +57,8 @@ class GrupoObrasIn(BaseModel):
     nome: str
     descricao: str | None = None
     obras: list[str] = []
+    percentuais: dict[str, float] = {}
+    obra_especial: str | None = None
 
 
 class GrupoObrasOut(BaseModel):
@@ -64,3 +66,5 @@ class GrupoObrasOut(BaseModel):
     nome: str
     descricao: str | None = None
     obras: list[str]
+    percentuais: dict[str, float] = {}
+    obra_especial: str | None = None
