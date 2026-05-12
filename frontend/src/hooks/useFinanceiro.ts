@@ -115,7 +115,7 @@ export function useGruposObras() {
 
 export function useCreateGrupo() {
   const queryClient = useQueryClient()
-  return useMutation<GrupoObras, Error, Omit<GrupoObras, 'id'>>({
+  return useMutation<GrupoObras | null, Error, Omit<GrupoObras, 'id'>>({
     mutationFn: (body) => api.post('/grupos-obras', body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
   })
@@ -123,7 +123,7 @@ export function useCreateGrupo() {
 
 export function useUpdateGrupo() {
   const queryClient = useQueryClient()
-  return useMutation<GrupoObras, Error, GrupoObras>({
+  return useMutation<GrupoObras | null, Error, GrupoObras>({
     mutationFn: ({ id, ...body }) => api.put(`/grupos-obras/${id}`, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
   })
