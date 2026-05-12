@@ -87,3 +87,15 @@ class UpsertPlanejamentoIn(BaseModel):
 class BulkImportResult(BaseModel):
     imported: int
     errors: list[str] = []
+
+
+class FluxoRealMes(BaseModel):
+    mes: int
+    custo_real: float = 0.0
+    receita_realizada: float = 0.0
+
+
+class FluxoRealResponse(BaseModel):
+    obra_codigo: str
+    ano: int
+    meses: list[FluxoRealMes]  # sempre 12 elementos

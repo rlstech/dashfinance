@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
-  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras,
+  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras, FluxoRealResponse,
 } from '@/types'
 
 export function useAP() {
@@ -134,6 +134,38 @@ export function useDeleteGrupo() {
   return useMutation<void, Error, number>({
     mutationFn: (id) => api.delete(`/grupos-obras/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
+  })
+}
+
+export function useFluxoObrasReal(
+  ano: number,
+  origens: string[],
+  statusRec: string[],
+  enabled: boolean,
+) {
+  return useQuery<FluxoRealResponse[]>({
+    queryKey: ['fluxo-obras-real', ano, [...origens].sort(), [...statusRec].sort()],
+    enabled,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      const { useAuthStore } = await import('@/hooks/useAuth')
+      const token = useAuthStore.getState().token
+      const baseUrl = import.meta.env.VITE_API_URL || '/api'
+      const params = new URLSearchParams()
+      params.append('ano', String(ano))
+      origens.forEach((o) => params.append('origens', o))
+      statusRec.forEach((s) => params.append('status_rec', s))
+      const res = await fetch(`${baseUrl}/fluxo-obras/real?${params}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (res.status === 401) {
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+        throw new Error('Sessão expirada')
+      }
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      return res.json()
+    },
   })
 }
 

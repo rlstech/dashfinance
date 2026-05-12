@@ -143,3 +143,15 @@ export interface BulkImportResult {
   imported: number
   errors: string[]
 }
+
+export interface FluxoRealMes {
+  mes: number
+  custo_real: number
+  receita_realizada: number
+}
+
+export interface FluxoRealResponse {
+  obra_codigo: string
+  ano: number
+  meses: FluxoRealMes[]
+}

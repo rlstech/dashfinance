@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, Upload, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw, Upload, X } from 'lucide-react'
 import {
   useCreateGrupo,
   useDeleteGrupo,
   useFilterTree,
   useFluxoObrasTodas,
+  useFluxoObrasReal,
   useGruposObras,
   useImportarPlanilhaObras,
   useSavePlanejamento,
@@ -496,11 +497,17 @@ export default function FluxoObras() {
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
   // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
   const [modalState, setModalState] = useState<'novo' | GrupoObras | null>(null)
+  // filtros para dados reais
+  const [origensAP, setOrigensAP] = useState<string[]>(['Pago'])
+  const [statusRec, setStatusRec] = useState<string[]>(['Recebida'])
+  const [realEnabled, setRealEnabled] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: tree } = useFilterTree()
   const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(ano)
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
+  const { data: dadosReais, isLoading: loadingReal, refetch: carregarReal } =
+    useFluxoObrasReal(ano, origensAP, statusRec, realEnabled)
   const savePlanejamento = useSavePlanejamento()
   const importarPlanilha = useImportarPlanilhaObras()
   const deleteGrupo = useDeleteGrupo()
@@ -531,8 +538,26 @@ export default function FluxoObras() {
     return todasObras.filter((o) => set.has(o.obra_codigo))
   }, [todasObras, grupoAtivo])
 
+  const obrasParaRender = useMemo(() => {
+    if (!dadosReais) return obrasDoGrupo
+    const realMap = new Map(dadosReais.map((r) => [r.obra_codigo, r.meses]))
+    return obrasDoGrupo.map((obra) => {
+      const real = realMap.get(obra.obra_codigo)
+      if (!real) return obra
+      return {
+        ...obra,
+        meses: obra.meses.map((m, i) => ({
+          ...m,
+          custo_real: real[i]?.custo_real ?? 0,
+          receita_realizada: real[i]?.receita_realizada ?? 0,
+        })),
+      }
+    })
+  }, [obrasDoGrupo, dadosReais])
+
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
+    setRealEnabled(false)
     setView('obras')
   }
 
@@ -704,11 +729,83 @@ export default function FluxoObras() {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Painel: Dados Reais */}
+            <div className="bg-white block-border p-4 space-y-3">
+              <p className="text-xs font-black uppercase tracking-widest text-dark">Dados Reais (UAU)</p>
+              <div className="flex flex-wrap gap-6">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Despesas</p>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={origensAP.includes('Pago')}
+                      onChange={(e) => setOrigensAP(prev =>
+                        e.target.checked ? [...prev, 'Pago'] : prev.filter(o => o !== 'Pago')
+                      )}
+                    />
+                    Realizadas (Pago)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={origensAP.includes('Emissao')}
+                      onChange={(e) => setOrigensAP(prev =>
+                        e.target.checked
+                          ? [...prev, 'Emissao', 'A Confirmar']
+                          : prev.filter(o => o !== 'Emissao' && o !== 'A Confirmar')
+                      )}
+                    />
+                    A Realizar (Emissão + A Confirmar)
+                  </label>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Receitas</p>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={statusRec.includes('Recebida')}
+                      onChange={(e) => setStatusRec(prev =>
+                        e.target.checked ? [...prev, 'Recebida'] : prev.filter(s => s !== 'Recebida')
+                      )}
+                    />
+                    Realizadas (Recebidas)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={statusRec.includes('A Receber')}
+                      onChange={(e) => setStatusRec(prev =>
+                        e.target.checked ? [...prev, 'A Receber'] : prev.filter(s => s !== 'A Receber')
+                      )}
+                    />
+                    A Receber
+                  </label>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => { setRealEnabled(true); carregarReal() }}
+                  disabled={loadingReal}
+                  className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  <RefreshCw className={cn('h-3 w-3', loadingReal && 'animate-spin')} />
+                  {loadingReal ? 'Carregando…' : dadosReais ? 'Atualizar Dados Reais' : 'Carregar Dados Reais'}
+                </button>
+                {dadosReais && !loadingReal && (
+                  <span className="text-xs font-bold text-teal-600">✓ Dados reais carregados</span>
+                )}
+              </div>
+            </div>
+
             <p className="text-xs text-muted-foreground">
               {obrasDoGrupo.length} obra(s) · Clique no cabeçalho de cada obra para expandir/colapsar ·
               Clique nas células de <strong>Custo Previsto</strong> ou <strong>Receita Prevista</strong> para editar
             </p>
-            {obrasDoGrupo.map((obra) => (
+            {obrasParaRender.map((obra) => (
               <ObraSection
                 key={obra.obra_codigo}
                 data={obra}
