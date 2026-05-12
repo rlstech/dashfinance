@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw, Upload, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw, Search, Upload, X } from 'lucide-react'
 import {
   useCreateGrupo,
   useDeleteGrupo,
@@ -14,7 +14,7 @@ import {
 import { formatCurrency } from '@/lib/formatters'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { MultiSelect } from '@/components/filters/MultiSelect'
+
 import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, UpsertPlanejamentoIn } from '@/types'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -98,29 +98,44 @@ function ValueCell({ value, bold }: { value: number; bold?: boolean }) {
 
 interface GrupoModalProps {
   grupos: GrupoObras[]
-  todasObras: string[]
+  obrasPorEmpresa: Record<string, string[]>
   onClose: () => void
   initialEditando?: GrupoObras
   startInCreate?: boolean
 }
 
-function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreate }: GrupoModalProps) {
+function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startInCreate }: GrupoModalProps) {
   const [editando, setEditando] = useState<GrupoObras | null>(initialEditando ?? null)
   const [criando, setCriando] = useState(startInCreate ?? false)
   const [nome, setNome] = useState(initialEditando?.nome ?? '')
   const [descricao, setDescricao] = useState(initialEditando?.descricao ?? '')
   const [obrasSel, setObrasSel] = useState<string[]>(initialEditando?.obras ?? [])
+  const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null)
+  const [buscaObra, setBuscaObra] = useState('')
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
   const deleteGrupo = useDeleteGrupo()
   const isPending = createGrupo.isPending || updateGrupo.isPending || deleteGrupo.isPending
 
+  const empresas = useMemo(() => Object.keys(obrasPorEmpresa).sort(), [obrasPorEmpresa])
+
+  const obrasVisiveis = useMemo(() => {
+    const fonte = empresaFiltro
+      ? (obrasPorEmpresa[empresaFiltro] ?? [])
+      : Object.values(obrasPorEmpresa).flat()
+    const termo = buscaObra.trim().toLowerCase()
+    const unicas = [...new Set(fonte)].sort()
+    return termo ? unicas.filter((o) => o.toLowerCase().includes(termo)) : unicas
+  }, [obrasPorEmpresa, empresaFiltro, buscaObra])
+
   function startCreate() {
     setEditando(null)
     setNome('')
     setDescricao('')
     setObrasSel([])
+    setEmpresaFiltro(null)
+    setBuscaObra('')
     setCriando(true)
   }
 
@@ -129,6 +144,8 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
     setNome(g.nome)
     setDescricao(g.descricao ?? '')
     setObrasSel(g.obras)
+    setEmpresaFiltro(null)
+    setBuscaObra('')
     setEditando(g)
   }
 
@@ -138,6 +155,8 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
     setNome('')
     setDescricao('')
     setObrasSel([])
+    setEmpresaFiltro(null)
+    setBuscaObra('')
   }
 
   function saveForm() {
@@ -160,6 +179,20 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
     deleteGrupo.mutate(g.id, { onSuccess: () => onClose() })
   }
 
+  function toggleObra(obra: string) {
+    setObrasSel((prev) =>
+      prev.includes(obra) ? prev.filter((o) => o !== obra) : [...prev, obra],
+    )
+  }
+
+  function selecionarVisiveis() {
+    setObrasSel((prev) => [...new Set([...prev, ...obrasVisiveis])])
+  }
+
+  function limparSelecao() {
+    setObrasSel([])
+  }
+
   const showForm = criando || editando !== null
 
   return (
@@ -167,9 +200,9 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col block-border shadow-hard">
+      <div className="bg-white w-full max-w-3xl max-h-[92vh] flex flex-col block-border shadow-hard">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-dark text-white">
+        <div className="flex items-center justify-between px-6 py-4 bg-dark text-white flex-shrink-0">
           <h2 className="text-sm font-black uppercase tracking-widest">
             {showForm ? (editando ? 'Editar Grupo' : 'Novo Grupo') : 'Grupos de Análise'}
           </h2>
@@ -185,10 +218,7 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
           )}
 
           {!showForm && grupos.map((g) => (
-            <div
-              key={g.id}
-              className="border-2 border-grid p-3 flex items-start justify-between gap-4"
-            >
+            <div key={g.id} className="border-2 border-grid p-3 flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-widest truncate">{g.nome}</p>
                 {g.descricao && <p className="text-xs text-muted-foreground mt-0.5">{g.descricao}</p>}
@@ -197,12 +227,8 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
                 </p>
               </div>
               <div className="flex gap-3 flex-shrink-0">
-                <button onClick={() => startEdit(g)} disabled={isPending} className="text-xs font-bold text-brand hover:underline disabled:opacity-50">
-                  Editar
-                </button>
-                <button onClick={() => handleDelete(g)} disabled={isPending} className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50">
-                  Excluir
-                </button>
+                <button onClick={() => startEdit(g)} disabled={isPending} className="text-xs font-bold text-brand hover:underline disabled:opacity-50">Editar</button>
+                <button onClick={() => handleDelete(g)} disabled={isPending} className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50">Excluir</button>
               </div>
             </div>
           ))}
@@ -222,13 +248,101 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
               />
-              <MultiSelect
-                label="Obras"
-                options={todasObras}
-                selected={obrasSel}
-                onChange={setObrasSel}
-                allLabel="Todas"
-              />
+
+              {/* Seletor de obras */}
+              <div className="border-2 border-grid">
+                {/* Label + contador */}
+                <div className="flex items-center justify-between px-3 py-2 bg-bgBase border-b border-grid">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-dark">Obras</span>
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    {obrasSel.length} selecionada(s)
+                  </span>
+                </div>
+
+                {/* Chips de empresa */}
+                <div className="flex flex-wrap gap-1.5 px-3 py-2 border-b border-grid">
+                  <button
+                    type="button"
+                    onClick={() => setEmpresaFiltro(null)}
+                    className={cn(
+                      'text-[10px] font-black uppercase tracking-widest px-2 py-1 border transition-colors',
+                      empresaFiltro === null
+                        ? 'bg-dark text-white border-dark'
+                        : 'border-grid text-muted-foreground hover:bg-bgBase',
+                    )}
+                  >
+                    Todas
+                  </button>
+                  {empresas.map((emp) => (
+                    <button
+                      key={emp}
+                      type="button"
+                      onClick={() => setEmpresaFiltro(emp)}
+                      className={cn(
+                        'text-[10px] font-black uppercase tracking-widest px-2 py-1 border transition-colors',
+                        empresaFiltro === emp
+                          ? 'bg-dark text-white border-dark'
+                          : 'border-grid text-muted-foreground hover:bg-bgBase',
+                      )}
+                    >
+                      {emp}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Campo de busca */}
+                <div className="relative border-b border-grid">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                  <input
+                    className="w-full text-xs pl-8 pr-3 py-2 focus:outline-none focus:bg-brand/5 bg-white placeholder:text-muted-foreground/60"
+                    placeholder="Buscar obra..."
+                    value={buscaObra}
+                    onChange={(e) => setBuscaObra(e.target.value)}
+                  />
+                </div>
+
+                {/* Checklist */}
+                <div className="max-h-48 overflow-y-auto">
+                  {obrasVisiveis.length === 0 ? (
+                    <p className="px-3 py-4 text-xs text-muted-foreground text-center">Nenhuma obra encontrada.</p>
+                  ) : (
+                    obrasVisiveis.map((obra) => (
+                      <label
+                        key={obra}
+                        className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-brand/5 border-b border-grid/50 last:border-0 select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-brand flex-shrink-0"
+                          checked={obrasSel.includes(obra)}
+                          onChange={() => toggleObra(obra)}
+                        />
+                        <span className="text-xs text-dark truncate">{obra}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                {/* Ações da lista */}
+                <div className="flex items-center gap-3 px-3 py-2 border-t border-grid bg-bgBase">
+                  <button
+                    type="button"
+                    onClick={selecionarVisiveis}
+                    className="text-[10px] font-bold text-brand hover:underline"
+                  >
+                    Selecionar todas visíveis
+                  </button>
+                  <span className="text-muted-foreground/40">·</span>
+                  <button
+                    type="button"
+                    onClick={limparSelecao}
+                    className="text-[10px] font-bold text-muted-foreground hover:text-red-500"
+                  >
+                    Limpar seleção
+                  </button>
+                </div>
+              </div>
+
               {(createGrupo.isError || updateGrupo.isError) && (
                 <p className="text-xs font-bold text-red-600">
                   {(createGrupo.error ?? updateGrupo.error)?.message}
@@ -239,7 +353,7 @@ function GrupoModal({ grupos, todasObras, onClose, initialEditando, startInCreat
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t-2 border-grid flex items-center gap-2">
+        <div className="px-6 py-4 border-t-2 border-grid flex items-center gap-2 flex-shrink-0">
           {showForm ? (
             <>
               <button
@@ -651,10 +765,6 @@ export default function FluxoObras() {
     [grupos, grupoAtivoId],
   )
 
-  const todasObrasDisponiveis = useMemo(
-    () => Object.values(tree?.obras_por_empresa ?? {}).flat().sort(),
-    [tree],
-  )
 
   function calcTotaisGrupo(grupo: GrupoObras) {
     if (!todasObras) return null
@@ -738,7 +848,7 @@ export default function FluxoObras() {
   const modal = modalState !== null && (
     <GrupoModal
       grupos={grupos}
-      todasObras={todasObrasDisponiveis}
+      obrasPorEmpresa={tree?.obras_por_empresa ?? {}}
       onClose={() => setModalState(null)}
       initialEditando={typeof modalState === 'object' ? modalState : undefined}
       startInCreate={modalState === 'novo'}
