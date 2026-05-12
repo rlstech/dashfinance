@@ -494,32 +494,24 @@ interface ConsolidadoGrupoProps {
 function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const custoPrev  = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_previsto, 0))
-  const custoReal  = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
-  const recPrev    = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_prevista, 0))
-  const recReal    = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
-  const saldoPrev  = custoPrev.map((c, i) => recPrev[i] - c)
-  const saldoReal  = custoReal.map((c, i) => recReal[i] - c)
+  const custoReal = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
+  const recReal   = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
+  const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
 
-  let accP = 0; let accR = 0
-  const accPrev = saldoPrev.map((s) => { accP += s; return accP })
-  const accReal = saldoReal.map((s) => { accR += s; return accR })
+  let acc = 0
+  const saldoAcc = saldoMes.map((s) => { acc += s; return acc })
 
-  const totalCustoPrev = custoPrev.reduce((s, v) => s + v, 0)
-  const totalRecPrev   = recPrev.reduce((s, v) => s + v, 0)
-  const saldoAnual     = totalRecPrev - totalCustoPrev
+  const totalCustoReal = custoReal.reduce((s, v) => s + v, 0)
+  const totalRecReal   = recReal.reduce((s, v) => s + v, 0)
+  const saldoAnual     = totalRecReal - totalCustoReal
 
   type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean }
 
   const rows: Row[] = [
-    { label: 'Total Custo Previsto',    values: custoPrev, total: custoPrev.reduce((s, v) => s + v, 0) },
-    { label: 'Total Custo Real',        values: custoReal, total: custoReal.reduce((s, v) => s + v, 0) },
-    { label: 'Total Receita Prevista',  values: recPrev,   total: recPrev.reduce((s, v) => s + v, 0) },
-    { label: 'Total Receita Realizada', values: recReal,   total: recReal.reduce((s, v) => s + v, 0) },
-    { label: 'Saldo Mensal Planejado',  values: saldoPrev, total: saldoPrev.reduce((s, v) => s + v, 0), separator: true },
-    { label: 'Saldo Mensal Real',       values: saldoReal, total: saldoReal.reduce((s, v) => s + v, 0) },
-    { label: 'Saldo Acumulado Planejado', values: accPrev, total: accPrev[11], bold: true },
-    { label: 'Saldo Acumulado Real',    values: accReal,   total: accReal[11], bold: true },
+    { label: 'Custo Real',        values: custoReal, total: totalCustoReal },
+    { label: 'Receita Realizada', values: recReal,   total: totalRecReal },
+    { label: 'Saldo do Mês',      values: saldoMes,  total: saldoMes.reduce((s, v) => s + v, 0), separator: true },
+    { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[11], bold: true },
   ]
 
   return (
@@ -539,10 +531,10 @@ function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
         </div>
         <div className="flex items-center gap-6 text-xs tabular-nums">
           <span className="hidden sm:inline text-white/60">
-            Custo Prev: <span className="text-white font-bold">{formatCurrency(totalCustoPrev)}</span>
+            Custo Real: <span className="text-white font-bold">{formatCurrency(totalCustoReal)}</span>
           </span>
           <span className="hidden sm:inline text-white/60">
-            Rec Prev: <span className="text-white font-bold">{formatCurrency(totalRecPrev)}</span>
+            Rec. Realizada: <span className="text-white font-bold">{formatCurrency(totalRecReal)}</span>
           </span>
           <span className={cn('font-black', saldoAnual >= 0 ? 'text-teal-300' : 'text-red-400')}>
             Saldo: {formatCurrency(saldoAnual)}
