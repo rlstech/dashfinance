@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
-  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult,
+  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras,
 } from '@/types'
 
 export function useAP() {
@@ -102,6 +102,38 @@ export function useSavePlanejamento() {
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas', variables.ano] })
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano] })
     },
+  })
+}
+
+export function useGruposObras() {
+  return useQuery<GrupoObras[]>({
+    queryKey: ['grupos-obras'],
+    queryFn: () => api.get('/grupos-obras'),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function useCreateGrupo() {
+  const queryClient = useQueryClient()
+  return useMutation<GrupoObras, Error, Omit<GrupoObras, 'id'>>({
+    mutationFn: (body) => api.post('/grupos-obras', body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
+  })
+}
+
+export function useUpdateGrupo() {
+  const queryClient = useQueryClient()
+  return useMutation<GrupoObras, Error, GrupoObras>({
+    mutationFn: ({ id, ...body }) => api.put(`/grupos-obras/${id}`, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
+  })
+}
+
+export function useDeleteGrupo() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/grupos-obras/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
   })
 }
 

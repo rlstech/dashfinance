@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS fluxo_planejamento (
     updated_at       TIMESTAMP DEFAULT NOW(),
     UNIQUE (obra_codigo, ano, mes)
 );
+
+CREATE TABLE IF NOT EXISTS grupos_obras (
+    id         SERIAL PRIMARY KEY,
+    nome       VARCHAR(255) NOT NULL UNIQUE,
+    descricao  TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    updated_by INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS grupo_obra_items (
+    grupo_id    INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    obra_codigo VARCHAR(200) NOT NULL,
+    PRIMARY KEY (grupo_id, obra_codigo)
+);
 """
 
 
@@ -239,6 +254,62 @@ async def get_planejamento_bulk(obras: list[str], ano: int) -> dict[str, list[di
         ]
         for obra in obras
     }
+
+
+# ── Grupos de Obras ───────────────────────────────────────────────────────────
+
+async def get_grupos() -> list[dict]:
+    async with _pool.acquire() as conn:
+        grupos = await conn.fetch(
+            "SELECT id, nome, descricao FROM grupos_obras ORDER BY nome"
+        )
+        items = await conn.fetch(
+            "SELECT grupo_id, obra_codigo FROM grupo_obra_items ORDER BY obra_codigo"
+        )
+    obras_map: dict[int, list[str]] = {}
+    for item in items:
+        obras_map.setdefault(item["grupo_id"], []).append(item["obra_codigo"])
+    return [
+        {"id": g["id"], "nome": g["nome"], "descricao": g["descricao"], "obras": obras_map.get(g["id"], [])}
+        for g in grupos
+    ]
+
+
+async def create_grupo(nome: str, descricao: str | None, obras: list[str], user_id: int) -> dict:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO grupos_obras (nome, descricao, updated_by) VALUES ($1,$2,$3) RETURNING id",
+            nome, descricao, user_id,
+        )
+        grupo_id = row["id"]
+        await _set_grupo_obras(conn, grupo_id, obras)
+    return {"id": grupo_id, "nome": nome, "descricao": descricao, "obras": obras}
+
+
+async def update_grupo(grupo_id: int, nome: str, descricao: str | None, obras: list[str], user_id: int) -> dict | None:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE grupos_obras SET nome=$2, descricao=$3, updated_at=NOW(), updated_by=$4 WHERE id=$1 RETURNING id",
+            grupo_id, nome, descricao, user_id,
+        )
+        if not row:
+            return None
+        await _set_grupo_obras(conn, grupo_id, obras)
+    return {"id": grupo_id, "nome": nome, "descricao": descricao, "obras": obras}
+
+
+async def delete_grupo(grupo_id: int) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute("DELETE FROM grupos_obras WHERE id=$1", grupo_id)
+
+
+async def _set_grupo_obras(conn, grupo_id: int, obras: list[str]):
+    await conn.execute("DELETE FROM grupo_obra_items WHERE grupo_id=$1", grupo_id)
+    if obras:
+        await conn.executemany(
+            "INSERT INTO grupo_obra_items (grupo_id, obra_codigo) VALUES ($1, $2)",
+            [(grupo_id, o) for o in obras],
+        )
 
 
 async def bulk_upsert_planejamento(items: list[dict]) -> int:

@@ -106,6 +106,15 @@ export const TIPO_LABEL: Record<string, string> = {
   C: 'Chaves',
 }
 
+// ── Grupos de Obras ───────────────────────────────────────────────────────────
+
+export interface GrupoObras {
+  id: number
+  nome: string
+  descricao?: string
+  obras: string[]
+}
+
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
 
 export interface FluxoMesRow {

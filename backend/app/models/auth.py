@@ -51,3 +51,16 @@ class SaldoConfigOut(BaseModel):
     conta: str
     enabled: bool
     saldo: float
+
+
+class GrupoObrasIn(BaseModel):
+    nome: str
+    descricao: str | None = None
+    obras: list[str] = []
+
+
+class GrupoObrasOut(BaseModel):
+    id: int
+    nome: str
+    descricao: str | None = None
+    obras: list[str]

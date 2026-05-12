@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.admin import router as admin_router
 from app.api.config_api import router as config_router
 from app.api.fluxo_obras import router as fluxo_obras_router
+from app.api.grupos_obras import router as grupos_obras_router
 
 router = APIRouter(prefix="/api")
 router.include_router(auth_router)
@@ -15,3 +16,4 @@ router.include_router(filters_router)
 router.include_router(admin_router)
 router.include_router(config_router)
 router.include_router(fluxo_obras_router)
+router.include_router(grupos_obras_router)
