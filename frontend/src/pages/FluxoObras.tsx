@@ -485,6 +485,147 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed }: ObraS
   )
 }
 
+// ── Consolidado do grupo ─────────────────────────────────────────────────────
+
+interface ConsolidadoGrupoProps {
+  obras: FluxoPlanejamentoResponse[]
+}
+
+function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  const custoPrev  = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_previsto, 0))
+  const custoReal  = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
+  const recPrev    = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_prevista, 0))
+  const recReal    = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
+  const saldoPrev  = custoPrev.map((c, i) => recPrev[i] - c)
+  const saldoReal  = custoReal.map((c, i) => recReal[i] - c)
+
+  let accP = 0; let accR = 0
+  const accPrev = saldoPrev.map((s) => { accP += s; return accP })
+  const accReal = saldoReal.map((s) => { accR += s; return accR })
+
+  const totalCustoPrev = custoPrev.reduce((s, v) => s + v, 0)
+  const totalRecPrev   = recPrev.reduce((s, v) => s + v, 0)
+  const saldoAnual     = totalRecPrev - totalCustoPrev
+
+  type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean }
+
+  const rows: Row[] = [
+    { label: 'Total Custo Previsto',    values: custoPrev, total: custoPrev.reduce((s, v) => s + v, 0) },
+    { label: 'Total Custo Real',        values: custoReal, total: custoReal.reduce((s, v) => s + v, 0) },
+    { label: 'Total Receita Prevista',  values: recPrev,   total: recPrev.reduce((s, v) => s + v, 0) },
+    { label: 'Total Receita Realizada', values: recReal,   total: recReal.reduce((s, v) => s + v, 0) },
+    { label: 'Saldo Mensal Planejado',  values: saldoPrev, total: saldoPrev.reduce((s, v) => s + v, 0), separator: true },
+    { label: 'Saldo Mensal Real',       values: saldoReal, total: saldoReal.reduce((s, v) => s + v, 0) },
+    { label: 'Saldo Acumulado Planejado', values: accPrev, total: accPrev[11], bold: true },
+    { label: 'Saldo Acumulado Real',    values: accReal,   total: accReal[11], bold: true },
+  ]
+
+  return (
+    <div className="bg-white block-border shadow-hard">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-4 py-3 bg-dark text-white hover:bg-dark/90 transition-colors"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-3">
+          {collapsed
+            ? <ChevronRight className="h-4 w-4 flex-shrink-0" />
+            : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
+          <span className="text-xs font-black uppercase tracking-widest">
+            Consolidado Operacional do Grupo
+          </span>
+        </div>
+        <div className="flex items-center gap-6 text-xs tabular-nums">
+          <span className="hidden sm:inline text-white/60">
+            Custo Prev: <span className="text-white font-bold">{formatCurrency(totalCustoPrev)}</span>
+          </span>
+          <span className="hidden sm:inline text-white/60">
+            Rec Prev: <span className="text-white font-bold">{formatCurrency(totalRecPrev)}</span>
+          </span>
+          <span className={cn('font-black', saldoAnual >= 0 ? 'text-teal-300' : 'text-red-400')}>
+            Saldo: {formatCurrency(saldoAnual)}
+          </span>
+        </div>
+      </button>
+
+      {!collapsed && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse" style={{ minWidth: '1000px' }}>
+            <thead>
+              <tr className="bg-bgBase border-b-2 border-dark">
+                <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
+                  Métrica
+                </th>
+                {MESES.map((m) => (
+                  <th key={m} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
+                    {m}
+                  </th>
+                ))}
+                <th className="text-right font-black uppercase tracking-widest px-2 py-2 w-24 border-l-2 border-dark bg-bgBase">
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const isSaldo = row.label.startsWith('Saldo')
+                const rowBg = row.bold ? 'bg-bgBase' : 'bg-white'
+                return (
+                  <tr
+                    key={row.label}
+                    className={cn(
+                      'border-b border-grid',
+                      row.separator && 'border-t-2 border-dark',
+                      rowBg,
+                    )}
+                  >
+                    <td
+                      className={cn(
+                        'px-4 py-1.5 uppercase tracking-wide text-xs sticky left-0 z-10 border-r-2 border-grid',
+                        row.bold ? 'bg-bgBase font-black' : `${rowBg} font-bold`,
+                      )}
+                    >
+                      {row.label}
+                    </td>
+                    {row.values.map((val, i) => (
+                      <td key={i} className="px-1 py-1">
+                        {isSaldo || row.bold ? (
+                          <ValueCell value={val} bold={row.bold} />
+                        ) : (
+                          <span className={cn(
+                            'block w-full text-right tabular-nums text-xs px-1 py-0.5',
+                            val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                          )}>
+                            {val === 0 ? '—' : formatCurrency(val)}
+                          </span>
+                        )}
+                      </td>
+                    ))}
+                    <td className={cn('px-1 py-1 border-l-2 border-dark', rowBg)}>
+                      {isSaldo || row.bold ? (
+                        <ValueCell value={row.total} bold={row.bold} />
+                      ) : (
+                        <span className={cn(
+                          'block w-full text-right tabular-nums text-xs px-1 py-0.5 font-bold',
+                          row.total === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                        )}>
+                          {row.total === 0 ? '—' : formatCurrency(row.total)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function FluxoObras() {
@@ -815,6 +956,8 @@ export default function FluxoObras() {
                 defaultCollapsed={obrasDoGrupo.length > 5}
               />
             ))}
+
+            <ConsolidadoGrupo obras={obrasParaRender} />
           </div>
         )}
 
