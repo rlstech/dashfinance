@@ -673,22 +673,13 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
 
 interface ConsolidadoGrupoProps {
   obras: FluxoPlanejamentoResponse[]
-  obraEspecial?: string
 }
 
-function ConsolidadoGrupo({ obras, obraEspecial }: ConsolidadoGrupoProps) {
+function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
-  // Custo Real: soma de TODAS as obras
   const custoReal = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
-  // Receita: SOMENTE a obra especial (Receita UAU); se não houver especial, soma tudo
-  const recReal = Array.from({ length: 12 }, (_, i) => {
-    if (obraEspecial) {
-      const esp = obras.find((o) => o.obra_codigo === obraEspecial)
-      return esp ? esp.meses[i].receita_realizada : 0
-    }
-    return obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0)
-  })
+  const recReal   = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
   const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
 
   let acc = 0
@@ -1171,7 +1162,7 @@ export default function FluxoObras() {
               />
             ))}
 
-            <ConsolidadoGrupo obras={obrasParaRender} obraEspecial={grupoAtivo?.obra_especial ?? undefined} />
+            <ConsolidadoGrupo obras={obrasParaRender} />
           </div>
         )}
 
