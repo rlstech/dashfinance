@@ -118,6 +118,7 @@ export interface GrupoObras {
   created_by?: number
   is_owner?: boolean
   shared_with?: number[]
+  empresas_greedy?: string[]
 }
 
 export interface UserBasic {

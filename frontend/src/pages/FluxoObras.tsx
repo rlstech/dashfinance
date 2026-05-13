@@ -118,6 +118,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null)
   const [buscaObra, setBuscaObra] = useState('')
   const [sharedWithIds, setSharedWithIds] = useState<number[]>(initialEditando?.shared_with ?? [])
+  const [empresasGreedy, setEmpresasGreedy] = useState<string[]>(initialEditando?.empresas_greedy ?? [])
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
@@ -145,7 +146,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setNome(''); setDescricao(''); setObrasSel([])
     setPercentuais({}); setObraEspecial('')
     setEmpresaFiltro(null); setBuscaObra('')
-    setSharedWithIds([])
+    setSharedWithIds([]); setEmpresasGreedy([])
   }
 
   function startCreate() {
@@ -164,6 +165,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setEmpresaFiltro(null)
     setBuscaObra('')
     setSharedWithIds(g.shared_with ?? [])
+    setEmpresasGreedy(g.empresas_greedy ?? [])
     setEditando(g)
   }
 
@@ -182,6 +184,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       percentuais,
       obra_especial: obraEspecial || undefined,
       shared_with: sharedWithIds,
+      empresas_greedy: empresasGreedy,
     }
     if (editando) {
       updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
@@ -420,6 +423,33 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                   </p>
                 )}
               </div>
+
+              {/* Demais Obras — empresas greedy */}
+              {empresas.length > 0 && (
+                <div className="border-2 border-grid p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-dark">Demais Obras</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Selecione empresas para incluir um card com todas as outras obras (não pertencentes a este grupo) no consolidado operacional.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {empresas.map((emp) => (
+                      <label key={emp} className="flex items-center gap-1.5 text-xs cursor-pointer select-none hover:bg-brand/5 px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          className="accent-brand flex-shrink-0"
+                          checked={empresasGreedy.includes(emp)}
+                          onChange={(e) => setEmpresasGreedy((prev) =>
+                            e.target.checked ? [...prev, emp] : prev.filter((x) => x !== emp)
+                          )}
+                        />
+                        <span>{emp}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Compartilhar com */}
               {otherUsers.length > 0 && (
@@ -740,17 +770,155 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
   )
 }
 
+// ── Card de demais obras (greedy) ────────────────────────────────────────────
+
+interface DemaisObrasSectionProps {
+  data: FluxoPlanejamentoResponse & { _greedyCount: number; _greedyEmpresas: string[] }
+  breakdown: FluxoPlanejamentoResponse[]
+}
+
+function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
+  const [collapsed, setCollapsed] = useState(true)
+  const meses = data.meses
+
+  const totalCustoPrev = meses.reduce((s, m) => s + m.custo_previsto, 0)
+  const totalRecPrev = meses.reduce((s, m) => s + m.receita_prevista, 0)
+  const saldoPrev = totalRecPrev - totalCustoPrev
+
+  let accReal = 0
+  const acumuladoReal = meses.map((m) => {
+    accReal += m.receita_realizada - m.custo_real
+    return accReal
+  })
+
+  function buildTooltip(mesIdx: number, field: 'custo_real' | 'receita_realizada'): string | undefined {
+    const contribuintes = breakdown
+      .map((o) => ({ obra: o.obra_codigo, val: o.meses[mesIdx][field] }))
+      .filter((x) => x.val !== 0)
+    if (!contribuintes.length) return undefined
+    return contribuintes.map((x) => `${x.obra}: ${formatCurrency(x.val)}`).join('\n')
+  }
+
+  const rows: Array<{ label: string; values: number[]; tooltipField?: 'custo_real' | 'receita_realizada'; accumulated?: boolean }> = [
+    { label: 'Custo Previsto', values: meses.map((m) => m.custo_previsto) },
+    { label: 'Receita Prevista', values: meses.map((m) => m.receita_prevista) },
+    { label: 'Custo Real', values: meses.map((m) => m.custo_real), tooltipField: 'custo_real' },
+    { label: 'Receita Realizada', values: meses.map((m) => m.receita_realizada), tooltipField: 'receita_realizada' },
+    { label: 'Fluxo Acumulado Real', values: acumuladoReal, accumulated: true },
+  ]
+
+  return (
+    <div className="bg-white block-border shadow-hard">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-4 py-3 bg-brand text-dark hover:bg-brand/90 transition-colors"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-3">
+          {collapsed
+            ? <ChevronRight className="h-4 w-4 flex-shrink-0" />
+            : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
+          <span className="text-xs font-black uppercase tracking-widest text-left">
+            Demais Obras — {data._greedyEmpresas.join(', ')}
+          </span>
+          <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">
+            {data._greedyCount} obras
+          </span>
+        </div>
+        <div className="flex items-center gap-6 text-xs tabular-nums">
+          <span className="hidden sm:inline text-dark/60">
+            Custo Prev: <span className="text-dark font-bold">{formatCurrency(totalCustoPrev)}</span>
+          </span>
+          <span className="hidden sm:inline text-dark/60">
+            Rec Prev: <span className="text-dark font-bold">{formatCurrency(totalRecPrev)}</span>
+          </span>
+          <span className={cn('font-black', saldoPrev >= 0 ? 'text-dark' : 'text-red-700')}>
+            Saldo: {formatCurrency(saldoPrev)}
+          </span>
+        </div>
+      </button>
+
+      {!collapsed && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
+            <thead>
+              <tr className="bg-bgBase border-b-2 border-dark">
+                <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
+                  Métrica
+                </th>
+                {MESES.map((m) => (
+                  <th key={m} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">{m}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const rowBg = row.accumulated ? 'bg-bgBase' : 'bg-white'
+                return (
+                  <tr
+                    key={row.label}
+                    className={cn('border-b border-grid hover:bg-brand/5 transition-colors', rowBg)}
+                  >
+                    <td className={cn(
+                      'px-4 py-1.5 uppercase tracking-wide text-xs sticky left-0 z-10 border-r-2 border-grid',
+                      row.accumulated ? 'bg-bgBase font-black' : `${rowBg} font-bold`,
+                    )}>
+                      {row.label}
+                    </td>
+                    {row.values.map((val, mesIdx) => {
+                      const tooltip = row.tooltipField ? buildTooltip(mesIdx, row.tooltipField) : undefined
+                      return (
+                        <td key={mesIdx} className="px-1 py-1">
+                          {row.accumulated ? (
+                            <ValueCell value={val} bold />
+                          ) : tooltip ? (
+                            <span
+                              title={tooltip}
+                              className={cn(
+                                'block w-full text-right tabular-nums text-xs px-1 py-0.5 cursor-help underline decoration-dotted decoration-muted-foreground/40',
+                                val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                              )}
+                            >
+                              {val === 0 ? '—' : formatCurrency(val)}
+                            </span>
+                          ) : (
+                            <span className={cn(
+                              'block w-full text-right tabular-nums text-xs px-1 py-0.5',
+                              val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                            )}>
+                              {val === 0 ? '—' : formatCurrency(val)}
+                            </span>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Consolidado do grupo ─────────────────────────────────────────────────────
 
 interface ConsolidadoGrupoProps {
   obras: FluxoPlanejamentoResponse[]
+  obrasGreedy?: FluxoPlanejamentoResponse | null
 }
 
-function ConsolidadoGrupo({ obras }: ConsolidadoGrupoProps) {
+function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const custoReal = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].custo_real, 0))
-  const recReal   = Array.from({ length: 12 }, (_, i) => obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0))
+  const custoReal = Array.from({ length: 12 }, (_, i) =>
+    obras.reduce((s, o) => s + o.meses[i].custo_real, 0) + (obrasGreedy?.meses[i].custo_real ?? 0)
+  )
+  const recReal   = Array.from({ length: 12 }, (_, i) =>
+    obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0) + (obrasGreedy?.meses[i].receita_realizada ?? 0)
+  )
   const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
 
   let acc = 0
@@ -970,6 +1138,55 @@ export default function FluxoObras() {
     // 3. Obra especial sempre por último
     return result.sort((a, b) => (a._isEspecial ? 1 : 0) - (b._isEspecial ? 1 : 0))
   }, [obrasDoGrupo, dadosReais, grupoAtivo])
+
+  type GreedyResult = {
+    sintetica: FluxoPlanejamentoResponse & { _greedyCount: number; _greedyEmpresas: string[] }
+    breakdown: FluxoPlanejamentoResponse[]
+  }
+
+  const obrasGreedy = useMemo((): GreedyResult | null => {
+    if (!grupoAtivo?.empresas_greedy?.length || !tree) return null
+    const grupoSet = new Set(grupoAtivo.obras)
+    const greedyObras = grupoAtivo.empresas_greedy.flatMap(
+      (emp) => (tree.obras_por_empresa[emp] ?? []).filter((o) => !grupoSet.has(o))
+    )
+    if (!greedyObras.length) return null
+    const greedySet = new Set(greedyObras)
+
+    const planejamento = (todasObras ?? []).filter((o) => greedySet.has(o.obra_codigo))
+    const realMap = dadosReais ? new Map(dadosReais.map((r) => [r.obra_codigo, r.meses])) : new Map()
+    const merged: FluxoPlanejamentoResponse[] = planejamento.map((obra) => {
+      const real = realMap.get(obra.obra_codigo)
+      if (!real) return obra
+      return {
+        ...obra,
+        meses: obra.meses.map((m, i) => ({
+          ...m,
+          custo_real: real[i]?.custo_real ?? 0,
+          receita_realizada: real[i]?.receita_realizada ?? 0,
+        })),
+      }
+    })
+
+    const meses = Array.from({ length: 12 }, (_, i) => ({
+      mes: i + 1,
+      custo_previsto: merged.reduce((s, o) => s + o.meses[i].custo_previsto, 0),
+      receita_prevista: merged.reduce((s, o) => s + o.meses[i].receita_prevista, 0),
+      custo_real: merged.reduce((s, o) => s + o.meses[i].custo_real, 0),
+      receita_realizada: merged.reduce((s, o) => s + o.meses[i].receita_realizada, 0),
+    }))
+
+    return {
+      sintetica: {
+        obra_codigo: '__DEMAIS_OBRAS__',
+        ano,
+        meses,
+        _greedyCount: greedyObras.length,
+        _greedyEmpresas: grupoAtivo.empresas_greedy,
+      },
+      breakdown: merged,
+    }
+  }, [grupoAtivo, tree, todasObras, dadosReais, ano])
 
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
@@ -1238,7 +1455,14 @@ export default function FluxoObras() {
               />
             ))}
 
-            <ConsolidadoGrupo obras={obrasParaRender} />
+            {obrasGreedy && (
+              <DemaisObrasSection
+                data={obrasGreedy.sintetica}
+                breakdown={obrasGreedy.breakdown}
+              />
+            )}
+
+            <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} />
           </div>
         )}
 

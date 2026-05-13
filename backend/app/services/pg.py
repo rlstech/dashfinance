@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS grupo_shares (
     user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (grupo_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS grupo_empresas_greedy (
+    grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    empresa  VARCHAR(200) NOT NULL,
+    PRIMARY KEY (grupo_id, empresa)
+);
 """
 
 
@@ -299,6 +305,10 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             "SELECT grupo_id, user_id FROM grupo_shares WHERE grupo_id = ANY($1)",
             grupo_ids,
         )
+        greedy = await conn.fetch(
+            "SELECT grupo_id, empresa FROM grupo_empresas_greedy WHERE grupo_id = ANY($1)",
+            grupo_ids,
+        )
 
     obras_map: dict[int, list[str]] = {}
     pct_map: dict[int, dict[str, float]] = {}
@@ -310,6 +320,10 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
     for share in shares:
         shares_map.setdefault(share["grupo_id"], []).append(share["user_id"])
 
+    greedy_map: dict[int, list[str]] = {}
+    for row in greedy:
+        greedy_map.setdefault(row["grupo_id"], []).append(row["empresa"])
+
     return [
         {
             "id": g["id"], "nome": g["nome"], "descricao": g["descricao"],
@@ -318,6 +332,7 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             "percentuais": pct_map.get(g["id"], {}),
             "created_by": g["created_by"],
             "shared_with": shares_map.get(g["id"], []),
+            "empresas_greedy": greedy_map.get(g["id"], []),
         }
         for g in grupos
     ]
@@ -333,8 +348,10 @@ async def create_grupo(
     nome: str, descricao: str | None, obras: list[str],
     percentuais: dict[str, float], obra_especial: str | None,
     user_id: int, shared_with: list[int] | None = None,
+    empresas_greedy: list[str] | None = None,
 ) -> dict:
     shared_with = shared_with or []
+    empresas_greedy = empresas_greedy or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             "INSERT INTO grupos_obras (nome, descricao, obra_especial, created_by, updated_by) VALUES ($1,$2,$3,$4,$4) RETURNING id",
@@ -342,6 +359,7 @@ async def create_grupo(
         )
         grupo_id = row["id"]
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
+        await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
         if shared_with:
             await conn.executemany(
                 "INSERT INTO grupo_shares (grupo_id, user_id) VALUES ($1, $2)",
@@ -351,6 +369,7 @@ async def create_grupo(
         "id": grupo_id, "nome": nome, "descricao": descricao,
         "obras": obras, "obra_especial": obra_especial or None,
         "percentuais": percentuais, "created_by": user_id, "shared_with": shared_with,
+        "empresas_greedy": empresas_greedy,
     }
 
 
@@ -358,7 +377,9 @@ async def update_grupo(
     grupo_id: int, nome: str, descricao: str | None, obras: list[str],
     percentuais: dict[str, float], obra_especial: str | None,
     user_id: int, shared_with: list[int] | None = None,
+    empresas_greedy: list[str] | None = None,
 ) -> dict | None:
+    empresas_greedy = empresas_greedy or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """UPDATE grupos_obras
@@ -369,6 +390,7 @@ async def update_grupo(
         if not row:
             return None
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
+        await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
         # Atualiza compartilhamentos (sempre sobrescreve se fornecido)
         if shared_with is not None:
             await conn.execute("DELETE FROM grupo_shares WHERE grupo_id=$1", grupo_id)
@@ -385,6 +407,7 @@ async def update_grupo(
         "id": grupo_id, "nome": nome, "descricao": descricao,
         "obras": obras, "obra_especial": obra_especial or None,
         "percentuais": percentuais, "created_by": row["created_by"], "shared_with": new_shares,
+        "empresas_greedy": empresas_greedy,
     }
 
 
@@ -407,6 +430,15 @@ async def _set_grupo_obras(conn, grupo_id: int, obras: list[str], percentuais: d
         await conn.executemany(
             "INSERT INTO grupo_obra_items (grupo_id, obra_codigo, percentual) VALUES ($1, $2, $3)",
             [(grupo_id, o, percentuais.get(o, 0.0)) for o in obras],
+        )
+
+
+async def _set_grupo_empresas_greedy(conn, grupo_id: int, empresas: list[str]):
+    await conn.execute("DELETE FROM grupo_empresas_greedy WHERE grupo_id=$1", grupo_id)
+    if empresas:
+        await conn.executemany(
+            "INSERT INTO grupo_empresas_greedy (grupo_id, empresa) VALUES ($1, $2)",
+            [(grupo_id, e) for e in empresas],
         )
 
 

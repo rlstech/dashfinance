@@ -47,6 +47,7 @@ async def create_grupo(body: GrupoObrasIn, user: UserOut = Depends(get_current_u
     grupo = await pg.create_grupo(
         body.nome, body.descricao, body.obras,
         body.percentuais, body.obra_especial, user.id, body.shared_with,
+        body.empresas_greedy,
     )
     return {**grupo, "is_owner": True}
 
@@ -64,6 +65,7 @@ async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depend
     result = await pg.update_grupo(
         grupo_id, body.nome, body.descricao, body.obras,
         body.percentuais, body.obra_especial, user.id, body.shared_with,
+        body.empresas_greedy,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Grupo não encontrado")
