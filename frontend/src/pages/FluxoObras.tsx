@@ -505,10 +505,10 @@ function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending,
         <div className="flex items-center gap-2">
           <p className="text-xs font-black uppercase tracking-widest truncate flex-1">{grupo.nome}</p>
           {!grupo.is_owner && (
-            <Share2 className="h-3 w-3 text-white/50 flex-shrink-0" title="Compartilhado com você" />
+            <Share2 className="h-3 w-3 text-white/50 flex-shrink-0" />
           )}
           {grupo.is_owner && (grupo.shared_with?.length ?? 0) > 0 && (
-            <Lock className="h-3 w-3 text-white/50 flex-shrink-0" title="Compartilhado por você" />
+            <Lock className="h-3 w-3 text-white/50 flex-shrink-0" />
           )}
         </div>
         {grupo.descricao && (
