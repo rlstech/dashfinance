@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Lock, RefreshCw, Search, Share2, Upload, X } from 'lucide-react'
 import {
   useCreateGrupo,
   useDeleteGrupo,
@@ -10,7 +10,9 @@ import {
   useImportarPlanilhaObras,
   useSavePlanejamento,
   useUpdateGrupo,
+  useUsers,
 } from '@/hooks/useFinanceiro'
+import { useAuthStore } from '@/hooks/useAuth'
 import { formatCurrency } from '@/lib/formatters'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -105,6 +107,7 @@ interface GrupoModalProps {
 }
 
 function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startInCreate }: GrupoModalProps) {
+  const currentUser = useAuthStore((s) => s.user)
   const [editando, setEditando] = useState<GrupoObras | null>(initialEditando ?? null)
   const [criando, setCriando] = useState(startInCreate ?? false)
   const [nome, setNome] = useState(initialEditando?.nome ?? '')
@@ -114,11 +117,18 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [obraEspecial, setObraEspecial] = useState<string>(initialEditando?.obra_especial ?? '')
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null)
   const [buscaObra, setBuscaObra] = useState('')
+  const [sharedWithIds, setSharedWithIds] = useState<number[]>(initialEditando?.shared_with ?? [])
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
   const deleteGrupo = useDeleteGrupo()
+  const { data: allUsers = [] } = useUsers()
   const isPending = createGrupo.isPending || updateGrupo.isPending || deleteGrupo.isPending
+
+  const otherUsers = useMemo(
+    () => allUsers.filter((u) => u.id !== currentUser?.id),
+    [allUsers, currentUser],
+  )
 
   const empresas = useMemo(() => Object.keys(obrasPorEmpresa).sort(), [obrasPorEmpresa])
 
@@ -135,6 +145,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setNome(''); setDescricao(''); setObrasSel([])
     setPercentuais({}); setObraEspecial('')
     setEmpresaFiltro(null); setBuscaObra('')
+    setSharedWithIds([])
   }
 
   function startCreate() {
@@ -152,6 +163,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setObraEspecial(g.obra_especial ?? '')
     setEmpresaFiltro(null)
     setBuscaObra('')
+    setSharedWithIds(g.shared_with ?? [])
     setEditando(g)
   }
 
@@ -169,6 +181,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       obras: obrasSel,
       percentuais,
       obra_especial: obraEspecial || undefined,
+      shared_with: sharedWithIds,
     }
     if (editando) {
       updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
@@ -181,6 +194,14 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     if (!confirm(`Excluir o grupo "${g.nome}"?`)) return
     deleteGrupo.mutate(g.id, { onSuccess: () => onClose() })
   }
+
+  function toggleShare(userId: number) {
+    setSharedWithIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    )
+  }
+
+  const canEditGrupo = (g: GrupoObras) => g.is_owner === true || currentUser?.is_admin === true
 
   function toggleObra(obra: string) {
     setObrasSel((prev) =>
@@ -223,16 +244,30 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
           {!showForm && grupos.map((g) => (
             <div key={g.id} className="border-2 border-grid p-3 flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-widest truncate">{g.nome}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-black uppercase tracking-widest truncate">{g.nome}</p>
+                  {!g.is_owner && (
+                    <span className="flex-shrink-0 text-[9px] font-black uppercase tracking-widest bg-brand/10 text-brand px-1.5 py-0.5">
+                      Compartilhado
+                    </span>
+                  )}
+                  {g.is_owner && (g.shared_with?.length ?? 0) > 0 && (
+                    <span className="flex-shrink-0 text-[9px] font-black uppercase tracking-widest bg-teal-50 text-teal-700 px-1.5 py-0.5">
+                      {g.shared_with!.length} usuário(s)
+                    </span>
+                  )}
+                </div>
                 {g.descricao && <p className="text-xs text-muted-foreground mt-0.5">{g.descricao}</p>}
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {g.obras.length} obra(s){g.obras.length > 0 ? ': ' + g.obras.slice(0, 4).join(', ') + (g.obras.length > 4 ? '…' : '') : ''}
                 </p>
               </div>
-              <div className="flex gap-3 flex-shrink-0">
-                <button onClick={() => startEdit(g)} disabled={isPending} className="text-xs font-bold text-brand hover:underline disabled:opacity-50">Editar</button>
-                <button onClick={() => handleDelete(g)} disabled={isPending} className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50">Excluir</button>
-              </div>
+              {canEditGrupo(g) && (
+                <div className="flex gap-3 flex-shrink-0">
+                  <button onClick={() => startEdit(g)} disabled={isPending} className="text-xs font-bold text-brand hover:underline disabled:opacity-50">Editar</button>
+                  <button onClick={() => handleDelete(g)} disabled={isPending} className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50">Excluir</button>
+                </div>
+              )}
             </div>
           ))}
 
@@ -386,6 +421,29 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                 )}
               </div>
 
+              {/* Compartilhar com */}
+              {otherUsers.length > 0 && (
+                <div className="border-2 border-grid p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Share2 className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-dark">Compartilhar com</span>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {otherUsers.map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 text-xs cursor-pointer select-none hover:bg-brand/5 px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          className="accent-brand flex-shrink-0"
+                          checked={sharedWithIds.includes(u.id)}
+                          onChange={() => toggleShare(u.id)}
+                        />
+                        <span className="truncate">{u.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(createGrupo.isError || updateGrupo.isError) && (
                 <p className="text-xs font-bold text-red-600">
                   {(createGrupo.error ?? updateGrupo.error)?.message}
@@ -436,14 +494,23 @@ interface GrupoCardProps {
   onEditar: () => void
   onExcluir: () => void
   deletePending: boolean
+  canEdit: boolean
 }
 
-function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending }: GrupoCardProps) {
+function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending, canEdit }: GrupoCardProps) {
   return (
     <div className="bg-white block-border shadow-hard flex flex-col">
       {/* Header do card */}
       <div className="bg-dark text-white px-4 py-3">
-        <p className="text-xs font-black uppercase tracking-widest truncate">{grupo.nome}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-black uppercase tracking-widest truncate flex-1">{grupo.nome}</p>
+          {!grupo.is_owner && (
+            <Share2 className="h-3 w-3 text-white/50 flex-shrink-0" title="Compartilhado com você" />
+          )}
+          {grupo.is_owner && (grupo.shared_with?.length ?? 0) > 0 && (
+            <Lock className="h-3 w-3 text-white/50 flex-shrink-0" title="Compartilhado por você" />
+          )}
+        </div>
         {grupo.descricao && (
           <p className="text-xs text-white/60 mt-0.5 truncate">{grupo.descricao}</p>
         )}
@@ -486,19 +553,23 @@ function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending 
         >
           Abrir
         </button>
-        <button
-          onClick={onEditar}
-          className="text-xs font-bold text-muted-foreground hover:text-brand transition-colors"
-        >
-          Editar
-        </button>
-        <button
-          onClick={onExcluir}
-          disabled={deletePending}
-          className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50"
-        >
-          Excluir
-        </button>
+        {canEdit && (
+          <button
+            onClick={onEditar}
+            className="text-xs font-bold text-muted-foreground hover:text-brand transition-colors"
+          >
+            Editar
+          </button>
+        )}
+        {canEdit && (
+          <button
+            onClick={onExcluir}
+            disabled={deletePending}
+            className="text-xs font-bold text-red-500 hover:underline disabled:opacity-50"
+          >
+            Excluir
+          </button>
+        )}
       </div>
     </div>
   )
@@ -809,6 +880,8 @@ export default function FluxoObras() {
     document.title = 'Fluxo de Obras | DashFinance'
   }, [])
 
+  const currentUser = useAuthStore((s) => s.user)
+
   const [ano, setAno] = useState(currentYear)
   const [view, setView] = useState<'grupos' | 'obras'>('grupos')
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
@@ -1005,6 +1078,7 @@ export default function FluxoObras() {
                   onEditar={() => setModalState(g)}
                   onExcluir={() => handleExcluirGrupo(g)}
                   deletePending={deleteGrupo.isPending}
+                  canEdit={g.is_owner === true || currentUser?.is_admin === true}
                 />
               ))}
             </div>
@@ -1041,12 +1115,14 @@ export default function FluxoObras() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => grupoAtivo && setModalState(grupoAtivo)}
-              className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors"
-            >
-              Editar Grupo
-            </button>
+            {(grupoAtivo?.is_owner === true || currentUser?.is_admin === true) && (
+              <button
+                onClick={() => grupoAtivo && setModalState(grupoAtivo)}
+                className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors"
+              >
+                Editar Grupo
+              </button>
+            )}
             {seletor_ano}
             <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
             <button

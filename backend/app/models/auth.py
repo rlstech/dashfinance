@@ -59,6 +59,7 @@ class GrupoObrasIn(BaseModel):
     obras: list[str] = []
     percentuais: dict[str, float] = {}
     obra_especial: str | None = None
+    shared_with: list[int] = []
 
 
 class GrupoObrasOut(BaseModel):
@@ -68,3 +69,11 @@ class GrupoObrasOut(BaseModel):
     obras: list[str]
     percentuais: dict[str, float] = {}
     obra_especial: str | None = None
+    created_by: int | None = None
+    is_owner: bool = False
+    shared_with: list[int] = []
+
+
+class UserBasic(BaseModel):
+    id: int
+    name: str

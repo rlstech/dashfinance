@@ -64,6 +64,13 @@ CREATE TABLE IF NOT EXISTS grupo_obra_items (
 
 ALTER TABLE grupos_obras    ADD COLUMN IF NOT EXISTS obra_especial VARCHAR(200);
 ALTER TABLE grupo_obra_items ADD COLUMN IF NOT EXISTS percentual   NUMERIC(5,2) DEFAULT 0;
+ALTER TABLE grupos_obras    ADD COLUMN IF NOT EXISTS created_by   INTEGER REFERENCES users(id);
+
+CREATE TABLE IF NOT EXISTS grupo_shares (
+    grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (grupo_id, user_id)
+);
 """
 
 
@@ -261,70 +268,137 @@ async def get_planejamento_bulk(obras: list[str], ano: int) -> dict[str, list[di
 
 # ── Grupos de Obras ───────────────────────────────────────────────────────────
 
-async def get_grupos() -> list[dict]:
+async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
     async with _pool.acquire() as conn:
-        grupos = await conn.fetch(
-            "SELECT id, nome, descricao, obra_especial FROM grupos_obras ORDER BY nome"
-        )
+        if is_admin:
+            grupos = await conn.fetch(
+                "SELECT id, nome, descricao, obra_especial, created_by FROM grupos_obras ORDER BY nome"
+            )
+        else:
+            grupos = await conn.fetch(
+                """SELECT g.id, g.nome, g.descricao, g.obra_especial, g.created_by
+                   FROM grupos_obras g
+                   WHERE g.created_by = $1
+                      OR EXISTS (
+                          SELECT 1 FROM grupo_shares gs
+                          WHERE gs.grupo_id = g.id AND gs.user_id = $1
+                      )
+                   ORDER BY g.nome""",
+                user_id,
+            )
+
+        if not grupos:
+            return []
+
+        grupo_ids = [g["id"] for g in grupos]
         items = await conn.fetch(
-            "SELECT grupo_id, obra_codigo, percentual FROM grupo_obra_items ORDER BY obra_codigo"
+            "SELECT grupo_id, obra_codigo, percentual FROM grupo_obra_items WHERE grupo_id = ANY($1) ORDER BY obra_codigo",
+            grupo_ids,
         )
+        shares = await conn.fetch(
+            "SELECT grupo_id, user_id FROM grupo_shares WHERE grupo_id = ANY($1)",
+            grupo_ids,
+        )
+
     obras_map: dict[int, list[str]] = {}
     pct_map: dict[int, dict[str, float]] = {}
     for item in items:
         obras_map.setdefault(item["grupo_id"], []).append(item["obra_codigo"])
         pct_map.setdefault(item["grupo_id"], {})[item["obra_codigo"]] = float(item["percentual"] or 0)
+
+    shares_map: dict[int, list[int]] = {}
+    for share in shares:
+        shares_map.setdefault(share["grupo_id"], []).append(share["user_id"])
+
     return [
         {
             "id": g["id"], "nome": g["nome"], "descricao": g["descricao"],
             "obras": obras_map.get(g["id"], []),
             "obra_especial": g["obra_especial"],
             "percentuais": pct_map.get(g["id"], {}),
+            "created_by": g["created_by"],
+            "shared_with": shares_map.get(g["id"], []),
         }
         for g in grupos
     ]
 
 
+async def get_grupo_created_by(grupo_id: int) -> int | None:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT created_by FROM grupos_obras WHERE id=$1", grupo_id)
+    return row["created_by"] if row else None
+
+
 async def create_grupo(
     nome: str, descricao: str | None, obras: list[str],
-    percentuais: dict[str, float], obra_especial: str | None, user_id: int,
+    percentuais: dict[str, float], obra_especial: str | None,
+    user_id: int, shared_with: list[int] | None = None,
 ) -> dict:
+    shared_with = shared_with or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
-            "INSERT INTO grupos_obras (nome, descricao, obra_especial, updated_by) VALUES ($1,$2,$3,$4) RETURNING id",
+            "INSERT INTO grupos_obras (nome, descricao, obra_especial, created_by, updated_by) VALUES ($1,$2,$3,$4,$4) RETURNING id",
             nome, descricao, obra_especial or None, user_id,
         )
         grupo_id = row["id"]
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
+        if shared_with:
+            await conn.executemany(
+                "INSERT INTO grupo_shares (grupo_id, user_id) VALUES ($1, $2)",
+                [(grupo_id, uid) for uid in shared_with],
+            )
     return {
         "id": grupo_id, "nome": nome, "descricao": descricao,
-        "obras": obras, "obra_especial": obra_especial or None, "percentuais": percentuais,
+        "obras": obras, "obra_especial": obra_especial or None,
+        "percentuais": percentuais, "created_by": user_id, "shared_with": shared_with,
     }
 
 
 async def update_grupo(
     grupo_id: int, nome: str, descricao: str | None, obras: list[str],
-    percentuais: dict[str, float], obra_especial: str | None, user_id: int,
+    percentuais: dict[str, float], obra_especial: str | None,
+    user_id: int, shared_with: list[int] | None = None,
 ) -> dict | None:
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """UPDATE grupos_obras
                SET nome=$2, descricao=$3, obra_especial=$4, updated_at=NOW(), updated_by=$5
-               WHERE id=$1 RETURNING id""",
+               WHERE id=$1 RETURNING id, created_by""",
             grupo_id, nome, descricao, obra_especial or None, user_id,
         )
         if not row:
             return None
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
+        # Atualiza compartilhamentos (sempre sobrescreve se fornecido)
+        if shared_with is not None:
+            await conn.execute("DELETE FROM grupo_shares WHERE grupo_id=$1", grupo_id)
+            if shared_with:
+                await conn.executemany(
+                    "INSERT INTO grupo_shares (grupo_id, user_id) VALUES ($1, $2)",
+                    [(grupo_id, uid) for uid in shared_with],
+                )
+            new_shares = shared_with
+        else:
+            existing = await conn.fetch("SELECT user_id FROM grupo_shares WHERE grupo_id=$1", grupo_id)
+            new_shares = [s["user_id"] for s in existing]
     return {
         "id": grupo_id, "nome": nome, "descricao": descricao,
-        "obras": obras, "obra_especial": obra_especial or None, "percentuais": percentuais,
+        "obras": obras, "obra_especial": obra_especial or None,
+        "percentuais": percentuais, "created_by": row["created_by"], "shared_with": new_shares,
     }
 
 
 async def delete_grupo(grupo_id: int) -> None:
     async with _pool.acquire() as conn:
         await conn.execute("DELETE FROM grupos_obras WHERE id=$1", grupo_id)
+
+
+async def get_all_users_basic() -> list[dict]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name FROM users WHERE is_active=TRUE ORDER BY name"
+        )
+    return [dict(r) for r in rows]
 
 
 async def _set_grupo_obras(conn, grupo_id: int, obras: list[str], percentuais: dict[str, float]):

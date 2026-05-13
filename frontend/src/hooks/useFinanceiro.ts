@@ -3,6 +3,7 @@ import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
   FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras, FluxoRealResponse,
+  UserBasic,
 } from '@/types'
 
 export function useAP() {
@@ -102,6 +103,14 @@ export function useSavePlanejamento() {
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas', variables.ano] })
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano] })
     },
+  })
+}
+
+export function useUsers() {
+  return useQuery<UserBasic[]>({
+    queryKey: ['users-basic'],
+    queryFn: () => api.get('/grupos-obras/users'),
+    staleTime: 1000 * 60 * 10,
   })
 }
 

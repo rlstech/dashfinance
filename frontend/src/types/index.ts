@@ -115,6 +115,14 @@ export interface GrupoObras {
   obras: string[]
   percentuais: Record<string, number>
   obra_especial?: string | null
+  created_by?: number
+  is_owner?: boolean
+  shared_with?: number[]
+}
+
+export interface UserBasic {
+  id: number
+  name: string
 }
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
