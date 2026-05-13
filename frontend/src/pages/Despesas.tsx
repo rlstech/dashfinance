@@ -105,6 +105,12 @@ export default function Despesas() {
 
   const [chartMode, setChartMode] = useState<'daily' | 'monthly'>('daily')
 
+  useEffect(() => {
+    if (!dtInicio || !dtFim) return
+    const days = (new Date(dtFim).getTime() - new Date(dtInicio).getTime()) / 86_400_000
+    setChartMode(days > 30 ? 'monthly' : 'daily')
+  }, [dtInicio, dtFim])
+
   const timelineData = useMemo(() => {
     const map = new Map<string, { emissao: number; a_confirmar: number; pago: number }>()
     filteredData.forEach((r) => {

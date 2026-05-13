@@ -354,6 +354,12 @@ export default function FluxoCaixa() {
 
   const [chartMode, setChartMode] = useState<'diario' | 'mensal'>('diario')
 
+  useEffect(() => {
+    if (!filters.dtInicio || !filters.dtFim) return
+    const days = (new Date(filters.dtFim).getTime() - new Date(filters.dtInicio).getTime()) / 86_400_000
+    setChartMode(days > 30 ? 'mensal' : 'diario')
+  }, [filters.dtInicio, filters.dtFim])
+
   const chartData = useMemo(() =>
     diasData.map((d) => ({ label: d.data, entradas: d.entradas, saidas: d.saidas, acumulado: d.acumulado })),
     [diasData]

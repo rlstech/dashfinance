@@ -117,6 +117,12 @@ export default function Receitas() {
 
   const [chartMode, setChartMode] = useState<'daily' | 'monthly'>('daily')
 
+  useEffect(() => {
+    if (!filters.dtInicio || !filters.dtFim) return
+    const days = (new Date(filters.dtFim).getTime() - new Date(filters.dtInicio).getTime()) / 86_400_000
+    setChartMode(days > 30 ? 'monthly' : 'daily')
+  }, [filters.dtInicio, filters.dtFim])
+
   const chartData = useMemo(() => {
     const byPeriod: Record<string, { recebida: number; a_receber: number }> = {}
     filtered.forEach((r) => {
