@@ -788,9 +788,9 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
   const [collapsed, setCollapsed] = useState(true)
   const meses = data.meses
 
-  const totalCustoPrev = meses.reduce((s, m) => s + m.custo_previsto, 0)
-  const totalRecPrev = meses.reduce((s, m) => s + m.receita_prevista, 0)
-  const saldoPrev = totalRecPrev - totalCustoPrev
+  const totalCustoReal = meses.reduce((s, m) => s + m.custo_real, 0)
+  const totalRecReal   = meses.reduce((s, m) => s + m.receita_realizada, 0)
+  const saldoReal      = totalRecReal - totalCustoReal
 
   let accReal = 0
   const acumuladoReal = meses.map((m) => {
@@ -834,13 +834,13 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
         </div>
         <div className="flex items-center gap-6 text-xs tabular-nums">
           <span className="hidden sm:inline text-dark/60">
-            Custo Prev: <span className="text-dark font-bold">{formatCurrency(totalCustoPrev)}</span>
+            Custo Real: <span className="text-dark font-bold">{formatCurrency(totalCustoReal)}</span>
           </span>
           <span className="hidden sm:inline text-dark/60">
-            Rec Prev: <span className="text-dark font-bold">{formatCurrency(totalRecPrev)}</span>
+            Rec. Realizada: <span className="text-dark font-bold">{formatCurrency(totalRecReal)}</span>
           </span>
-          <span className={cn('font-black', saldoPrev >= 0 ? 'text-dark' : 'text-red-700')}>
-            Saldo: {formatCurrency(saldoPrev)}
+          <span className={cn('font-black', saldoReal >= 0 ? 'text-dark' : 'text-red-700')}>
+            Saldo: {formatCurrency(saldoReal)}
           </span>
         </div>
       </button>
