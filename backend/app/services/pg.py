@@ -404,6 +404,12 @@ async def get_grupo_created_by(grupo_id: int) -> int | None:
     return row["created_by"] if row else None
 
 
+async def grupo_exists(grupo_id: int) -> bool:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT 1 FROM grupos_obras WHERE id=$1", grupo_id)
+    return row is not None
+
+
 def _normalize_shares(shared_with: list | None) -> list[dict]:
     """Aceita lista de dicts ({user_id, permission}) ou de ints (legado). Retorna sempre dicts."""
     if not shared_with:

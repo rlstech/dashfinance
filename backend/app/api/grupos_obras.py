@@ -52,8 +52,7 @@ async def create_grupo(body: GrupoObrasIn, user: UserOut = Depends(get_current_u
 
 @router.put("/{grupo_id}", response_model=GrupoObrasOut)
 async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depends(get_current_user)):
-    created_by = await pg.get_grupo_created_by(grupo_id)
-    if created_by is None:
+    if not await pg.grupo_exists(grupo_id):
         raise HTTPException(status_code=404, detail="Grupo não encontrado")
     if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
         raise HTTPException(status_code=403, detail="Sem permissão para editar este grupo")
@@ -76,8 +75,7 @@ async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depend
 
 @router.delete("/{grupo_id}", status_code=204)
 async def delete_grupo(grupo_id: int, user: UserOut = Depends(get_current_user)):
-    created_by = await pg.get_grupo_created_by(grupo_id)
-    if created_by is None:
+    if not await pg.grupo_exists(grupo_id):
         raise HTTPException(status_code=404, detail="Grupo não encontrado")
     if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
         raise HTTPException(status_code=403, detail="Sem permissão para excluir este grupo")
