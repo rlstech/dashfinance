@@ -625,6 +625,10 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
   const totalRecPrev = meses.reduce((s, m) => s + m.receita_prevista, 0)
   const saldoPrev = totalRecPrev - totalCustoPrev
 
+  const totalCustoReal = meses.reduce((s, m) => s + m.custo_real, 0)
+  const totalRecReal   = meses.reduce((s, m) => s + m.receita_realizada, 0)
+  const saldoReal      = totalRecReal - totalCustoReal
+
   let accPlan = 0
   let accReal = 0
   const acumuladoPlanejado = meses.map((m) => {
@@ -678,8 +682,8 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
   const headerTextCls = especial ? 'text-dark/60' : 'text-white/60'
   const headerValCls = especial ? 'text-dark font-bold' : 'text-white font-bold'
   const saldoCls = especial
-    ? cn('font-black', saldoPrev >= 0 ? 'text-dark' : 'text-red-700')
-    : cn('font-black', saldoPrev >= 0 ? 'text-teal-300' : 'text-red-400')
+    ? cn('font-black', saldoReal >= 0 ? 'text-dark' : 'text-red-700')
+    : cn('font-black', saldoReal >= 0 ? 'text-teal-300' : 'text-red-400')
 
   return (
     <div className="bg-white block-border shadow-hard">
@@ -703,13 +707,13 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
         </div>
         <div className="flex items-center gap-6 text-xs tabular-nums">
           <span className={cn('hidden sm:inline', headerTextCls)}>
-            Custo Prev: <span className={headerValCls}>{formatCurrency(totalCustoPrev)}</span>
+            Custo Real: <span className={headerValCls}>{formatCurrency(totalCustoReal)}</span>
           </span>
           <span className={cn('hidden sm:inline', headerTextCls)}>
-            Rec Prev: <span className={headerValCls}>{formatCurrency(totalRecPrev)}</span>
+            Rec. Realizada: <span className={headerValCls}>{formatCurrency(totalRecReal)}</span>
           </span>
           <span className={saldoCls}>
-            Saldo: {formatCurrency(saldoPrev)}
+            Saldo: {formatCurrency(saldoReal)}
           </span>
         </div>
       </button>
