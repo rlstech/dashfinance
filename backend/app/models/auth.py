@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -53,13 +55,18 @@ class SaldoConfigOut(BaseModel):
     saldo: float
 
 
+class GrupoShareItem(BaseModel):
+    user_id: int
+    permission: Literal["view", "edit"] = "view"
+
+
 class GrupoObrasIn(BaseModel):
     nome: str
     descricao: str | None = None
     obras: list[str] = []
     percentuais: dict[str, float] = {}
     obra_especial: str | None = None
-    shared_with: list[int] = []
+    shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
 
 
@@ -72,7 +79,8 @@ class GrupoObrasOut(BaseModel):
     obra_especial: str | None = None
     created_by: int | None = None
     is_owner: bool = False
-    shared_with: list[int] = []
+    can_edit: bool = False
+    shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
 
 

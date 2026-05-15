@@ -108,6 +108,11 @@ export const TIPO_LABEL: Record<string, string> = {
 
 // ── Grupos de Obras ───────────────────────────────────────────────────────────
 
+export interface GrupoShareItem {
+  user_id: number
+  permission: 'view' | 'edit'
+}
+
 export interface GrupoObras {
   id: number
   nome: string
@@ -117,7 +122,8 @@ export interface GrupoObras {
   obra_especial?: string | null
   created_by?: number
   is_owner?: boolean
-  shared_with?: number[]
+  can_edit?: boolean
+  shared_with?: GrupoShareItem[]
   empresas_greedy?: string[]
 }
 

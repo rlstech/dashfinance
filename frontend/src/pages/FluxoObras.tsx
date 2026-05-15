@@ -19,7 +19,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoTotaisReais, UpsertPlanejamentoIn } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, UpsertPlanejamentoIn } from '@/types'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -119,7 +119,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [obraEspecial, setObraEspecial] = useState<string>(initialEditando?.obra_especial ?? '')
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null)
   const [buscaObra, setBuscaObra] = useState('')
-  const [sharedWithIds, setSharedWithIds] = useState<number[]>(initialEditando?.shared_with ?? [])
+  const [shares, setShares] = useState<GrupoShareItem[]>(initialEditando?.shared_with ?? [])
   const [empresasGreedy, setEmpresasGreedy] = useState<string[]>(initialEditando?.empresas_greedy ?? [])
 
   const createGrupo = useCreateGrupo()
@@ -148,7 +148,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setNome(''); setDescricao(''); setObrasSel([])
     setPercentuais({}); setObraEspecial('')
     setEmpresaFiltro(null); setBuscaObra('')
-    setSharedWithIds([]); setEmpresasGreedy([])
+    setShares([]); setEmpresasGreedy([])
   }
 
   function startCreate() {
@@ -166,7 +166,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setObraEspecial(g.obra_especial ?? '')
     setEmpresaFiltro(null)
     setBuscaObra('')
-    setSharedWithIds(g.shared_with ?? [])
+    setShares(g.shared_with ?? [])
     setEmpresasGreedy(g.empresas_greedy ?? [])
     setEditando(g)
   }
@@ -185,7 +185,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       obras: obrasSel,
       percentuais,
       obra_especial: obraEspecial || undefined,
-      shared_with: sharedWithIds,
+      shared_with: shares,
       empresas_greedy: empresasGreedy,
     }
     if (editando) {
@@ -201,12 +201,18 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   }
 
   function toggleShare(userId: number) {
-    setSharedWithIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
-    )
+    setShares((prev) => {
+      const idx = prev.findIndex((s) => s.user_id === userId)
+      if (idx >= 0) return prev.filter((_, i) => i !== idx)
+      return [...prev, { user_id: userId, permission: 'view' }]
+    })
   }
 
-  const canEditGrupo = (g: GrupoObras) => g.is_owner === true || currentUser?.is_admin === true
+  function setSharePermission(userId: number, permission: 'view' | 'edit') {
+    setShares((prev) => prev.map((s) => (s.user_id === userId ? { ...s, permission } : s)))
+  }
+
+  const canEditGrupo = (g: GrupoObras) => g.can_edit === true
 
   function toggleObra(obra: string) {
     setObrasSel((prev) =>
@@ -460,18 +466,37 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                     <Share2 className="h-3 w-3 text-muted-foreground" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-dark">Compartilhar com</span>
                   </div>
-                  <div className="max-h-32 overflow-y-auto space-y-1">
-                    {otherUsers.map((u) => (
-                      <label key={u.id} className="flex items-center gap-2 text-xs cursor-pointer select-none hover:bg-brand/5 px-1 py-0.5">
-                        <input
-                          type="checkbox"
-                          className="accent-brand flex-shrink-0"
-                          checked={sharedWithIds.includes(u.id)}
-                          onChange={() => toggleShare(u.id)}
-                        />
-                        <span className="truncate">{u.name}</span>
-                      </label>
-                    ))}
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {otherUsers.map((u) => {
+                      const share = shares.find((s) => s.user_id === u.id)
+                      const isShared = !!share
+                      return (
+                        <div
+                          key={u.id}
+                          className="flex items-center gap-2 text-xs px-1 py-1 hover:bg-brand/5"
+                        >
+                          <label className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0">
+                            <input
+                              type="checkbox"
+                              className="accent-brand flex-shrink-0"
+                              checked={isShared}
+                              onChange={() => toggleShare(u.id)}
+                            />
+                            <span className="truncate">{u.name}</span>
+                          </label>
+                          {isShared && (
+                            <select
+                              value={share!.permission}
+                              onChange={(e) => setSharePermission(u.id, e.target.value as 'view' | 'edit')}
+                              className="text-[10px] font-bold uppercase tracking-widest border border-grid px-1.5 py-0.5 bg-white focus:outline-none focus:border-brand"
+                            >
+                              <option value="view">Ver</option>
+                              <option value="edit">Editar</option>
+                            </select>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1385,7 +1410,7 @@ export default function FluxoObras() {
                   onEditar={() => setModalState(g)}
                   onExcluir={() => handleExcluirGrupo(g)}
                   deletePending={deleteGrupo.isPending}
-                  canEdit={g.is_owner === true || currentUser?.is_admin === true}
+                  canEdit={g.can_edit === true}
                 />
               ))}
             </div>
@@ -1422,7 +1447,7 @@ export default function FluxoObras() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {(grupoAtivo?.is_owner === true || currentUser?.is_admin === true) && (
+            {grupoAtivo?.can_edit === true && (
               <button
                 onClick={() => grupoAtivo && setModalState(grupoAtivo)}
                 className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors"
@@ -1522,7 +1547,7 @@ export default function FluxoObras() {
                       statusRec,
                     })
                   }}
-                  disabled={loadingReal || !grupoAtivoId}
+                  disabled={loadingReal || !grupoAtivoId || grupoAtivo?.can_edit !== true}
                   className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <RefreshCw className={cn('h-3 w-3', loadingReal && 'animate-spin')} />
@@ -1530,6 +1555,11 @@ export default function FluxoObras() {
                 </button>
                 {meta && !loadingReal && (
                   <span className="text-xs font-bold text-teal-600">✓ Dados reais carregados</span>
+                )}
+                {grupoAtivo && grupoAtivo.can_edit !== true && (
+                  <span className="text-xs text-muted-foreground italic">
+                    Acesso somente de visualização — peça ao dono para atualizar.
+                  </span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">

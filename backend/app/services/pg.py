@@ -68,10 +68,25 @@ ALTER TABLE grupo_obra_items ADD COLUMN IF NOT EXISTS percentual   NUMERIC(5,2) 
 ALTER TABLE grupos_obras    ADD COLUMN IF NOT EXISTS created_by   INTEGER REFERENCES users(id);
 
 CREATE TABLE IF NOT EXISTS grupo_shares (
-    grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
-    user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    grupo_id   INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL DEFAULT 'view',
     PRIMARY KEY (grupo_id, user_id)
 );
+
+ALTER TABLE grupo_shares ADD COLUMN IF NOT EXISTS permission TEXT NOT NULL DEFAULT 'view';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.check_constraints
+        WHERE constraint_name = 'grupo_shares_permission_chk'
+    ) THEN
+        ALTER TABLE grupo_shares
+            ADD CONSTRAINT grupo_shares_permission_chk
+            CHECK (permission IN ('view', 'edit'));
+    END IF;
+END$$;
 
 CREATE TABLE IF NOT EXISTS grupo_empresas_greedy (
     grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
@@ -335,7 +350,7 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             grupo_ids,
         )
         shares = await conn.fetch(
-            "SELECT grupo_id, user_id FROM grupo_shares WHERE grupo_id = ANY($1)",
+            "SELECT grupo_id, user_id, permission FROM grupo_shares WHERE grupo_id = ANY($1)",
             grupo_ids,
         )
         greedy = await conn.fetch(
@@ -349,9 +364,15 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
         obras_map.setdefault(item["grupo_id"], []).append(item["obra_codigo"])
         pct_map.setdefault(item["grupo_id"], {})[item["obra_codigo"]] = float(item["percentual"] or 0)
 
-    shares_map: dict[int, list[int]] = {}
+    shares_map: dict[int, list[dict]] = {}
+    editor_map: dict[int, set[int]] = {}
     for share in shares:
-        shares_map.setdefault(share["grupo_id"], []).append(share["user_id"])
+        shares_map.setdefault(share["grupo_id"], []).append({
+            "user_id": share["user_id"],
+            "permission": share["permission"],
+        })
+        if share["permission"] == "edit":
+            editor_map.setdefault(share["grupo_id"], set()).add(share["user_id"])
 
     greedy_map: dict[int, list[str]] = {}
     for row in greedy:
@@ -364,6 +385,12 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             "obra_especial": g["obra_especial"],
             "percentuais": pct_map.get(g["id"], {}),
             "created_by": g["created_by"],
+            "is_owner": is_admin or g["created_by"] == user_id,
+            "can_edit": (
+                is_admin
+                or g["created_by"] == user_id
+                or user_id in editor_map.get(g["id"], set())
+            ),
             "shared_with": shares_map.get(g["id"], []),
             "empresas_greedy": greedy_map.get(g["id"], []),
         }
@@ -377,13 +404,44 @@ async def get_grupo_created_by(grupo_id: int) -> int | None:
     return row["created_by"] if row else None
 
 
+def _normalize_shares(shared_with: list | None) -> list[dict]:
+    """Aceita lista de dicts ({user_id, permission}) ou de ints (legado). Retorna sempre dicts."""
+    if not shared_with:
+        return []
+    out: list[dict] = []
+    seen: set[int] = set()
+    for item in shared_with:
+        if isinstance(item, dict):
+            uid = int(item["user_id"])
+            perm = item.get("permission", "view")
+        else:
+            uid = int(item)
+            perm = "view"
+        if perm not in ("view", "edit"):
+            perm = "view"
+        if uid in seen:
+            continue
+        seen.add(uid)
+        out.append({"user_id": uid, "permission": perm})
+    return out
+
+
+async def _set_grupo_shares(conn, grupo_id: int, shares: list[dict]) -> None:
+    await conn.execute("DELETE FROM grupo_shares WHERE grupo_id=$1", grupo_id)
+    if shares:
+        await conn.executemany(
+            "INSERT INTO grupo_shares (grupo_id, user_id, permission) VALUES ($1, $2, $3)",
+            [(grupo_id, s["user_id"], s["permission"]) for s in shares],
+        )
+
+
 async def create_grupo(
     nome: str, descricao: str | None, obras: list[str],
     percentuais: dict[str, float], obra_especial: str | None,
-    user_id: int, shared_with: list[int] | None = None,
+    user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
 ) -> dict:
-    shared_with = shared_with or []
+    shares = _normalize_shares(shared_with)
     empresas_greedy = empresas_greedy or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -393,15 +451,12 @@ async def create_grupo(
         grupo_id = row["id"]
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
         await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
-        if shared_with:
-            await conn.executemany(
-                "INSERT INTO grupo_shares (grupo_id, user_id) VALUES ($1, $2)",
-                [(grupo_id, uid) for uid in shared_with],
-            )
+        await _set_grupo_shares(conn, grupo_id, shares)
     return {
         "id": grupo_id, "nome": nome, "descricao": descricao,
         "obras": obras, "obra_especial": obra_especial or None,
-        "percentuais": percentuais, "created_by": user_id, "shared_with": shared_with,
+        "percentuais": percentuais, "created_by": user_id,
+        "shared_with": shares,
         "empresas_greedy": empresas_greedy,
     }
 
@@ -409,7 +464,7 @@ async def create_grupo(
 async def update_grupo(
     grupo_id: int, nome: str, descricao: str | None, obras: list[str],
     percentuais: dict[str, float], obra_especial: str | None,
-    user_id: int, shared_with: list[int] | None = None,
+    user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
 ) -> dict | None:
     empresas_greedy = empresas_greedy or []
@@ -424,22 +479,23 @@ async def update_grupo(
             return None
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
         await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
-        # Atualiza compartilhamentos (sempre sobrescreve se fornecido)
         if shared_with is not None:
-            await conn.execute("DELETE FROM grupo_shares WHERE grupo_id=$1", grupo_id)
-            if shared_with:
-                await conn.executemany(
-                    "INSERT INTO grupo_shares (grupo_id, user_id) VALUES ($1, $2)",
-                    [(grupo_id, uid) for uid in shared_with],
-                )
-            new_shares = shared_with
+            new_shares = _normalize_shares(shared_with)
+            await _set_grupo_shares(conn, grupo_id, new_shares)
         else:
-            existing = await conn.fetch("SELECT user_id FROM grupo_shares WHERE grupo_id=$1", grupo_id)
-            new_shares = [s["user_id"] for s in existing]
+            existing = await conn.fetch(
+                "SELECT user_id, permission FROM grupo_shares WHERE grupo_id=$1",
+                grupo_id,
+            )
+            new_shares = [
+                {"user_id": s["user_id"], "permission": s["permission"]}
+                for s in existing
+            ]
     return {
         "id": grupo_id, "nome": nome, "descricao": descricao,
         "obras": obras, "obra_especial": obra_especial or None,
-        "percentuais": percentuais, "created_by": row["created_by"], "shared_with": new_shares,
+        "percentuais": percentuais, "created_by": row["created_by"],
+        "shared_with": new_shares,
         "empresas_greedy": empresas_greedy,
     }
 
@@ -597,6 +653,30 @@ async def get_grupos_real_totais(
             "status_rec": list(m["status_rec"]),
         }
     return result
+
+
+async def can_user_edit_grupo(
+    grupo_id: int, user_id: int, is_admin: bool,
+) -> bool:
+    """True se admin, dono, ou share com permission='edit'."""
+    if is_admin:
+        async with _pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM grupos_obras WHERE id=$1", grupo_id,
+            )
+        return row is not None
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT 1 FROM grupos_obras g
+               WHERE g.id=$1
+                 AND (g.created_by=$2
+                      OR EXISTS (SELECT 1 FROM grupo_shares gs
+                                 WHERE gs.grupo_id=g.id
+                                   AND gs.user_id=$2
+                                   AND gs.permission='edit'))""",
+            grupo_id, user_id,
+        )
+    return row is not None
 
 
 async def is_grupo_visible_to_user(

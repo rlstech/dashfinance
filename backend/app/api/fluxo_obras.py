@@ -235,8 +235,8 @@ async def atualizar_grupo_real(
     user: UserOut = Depends(get_current_user),
 ):
     """Recomputa dados reais para as obras do grupo (e greedy), persiste e devolve."""
-    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
-        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
+    if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem permissão de edição neste grupo")
 
     obras_diretas, empresas_greedy = await pg.get_grupo_obras_e_greedy(grupo_id)
     tree = await get_cached("dash:filters:tree") or {}
