@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ChevronDown, ChevronRight, FileDown, Lock, RefreshCw, Search, Share2, X } from 'lucide-react'
 import {
+  useAtualizarFluxoReal,
   useCreateGrupo,
   useDeleteGrupo,
   useFilterTree,
   useFluxoObrasTodas,
-  useFluxoObrasReal,
+  useFluxoRealCache,
   useGruposObras,
+  useGruposTotaisReais,
   useSavePlanejamento,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
 import { useAuthStore } from '@/hooks/useAuth'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatDateTime } from '@/lib/formatters'
 import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, UpsertPlanejamentoIn } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoTotaisReais, UpsertPlanejamentoIn } from '@/types'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -520,6 +522,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
 interface GrupoCardProps {
   grupo: GrupoObras
   totais: { custoPrev: number; recPrev: number; saldo: number } | null
+  totaisReais: GrupoTotaisReais | null
   onAbrir: () => void
   onEditar: () => void
   onExcluir: () => void
@@ -527,7 +530,9 @@ interface GrupoCardProps {
   canEdit: boolean
 }
 
-function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending, canEdit }: GrupoCardProps) {
+function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, deletePending, canEdit }: GrupoCardProps) {
+  const saldoReal = totaisReais ? totaisReais.receita_realizada - totaisReais.custo_real : null
+
   return (
     <div className="bg-white block-border shadow-hard flex flex-col">
       {/* Header do card */}
@@ -551,20 +556,48 @@ function GrupoCard({ grupo, totais, onAbrir, onEditar, onExcluir, deletePending,
         <p className="text-xs text-muted-foreground mb-3">{grupo.obras.length} obra(s)</p>
         {totais !== null ? (
           <div className="space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Custo Prev.</span>
-              <span className="font-bold tabular-nums">{formatCurrency(totais.custoPrev)}</span>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+              <span></span>
+              <span className="text-right">Prev.</span>
+              <span className="text-right">Real</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Rec. Prev.</span>
-              <span className="font-bold tabular-nums">{formatCurrency(totais.recPrev)}</span>
-            </div>
-            <div className="flex justify-between text-xs border-t-2 border-grid pt-2 mt-2">
-              <span className="font-black text-dark">Saldo</span>
-              <span className={cn('font-black tabular-nums', totais.saldo >= 0 ? 'text-teal-600' : 'text-red-500')}>
-                {formatCurrency(totais.saldo)}
+            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-xs items-baseline">
+              <span className="text-muted-foreground">Custo</span>
+              <span className="font-bold tabular-nums text-right">{formatCurrency(totais.custoPrev)}</span>
+              <span className="font-bold tabular-nums text-right text-dark/70">
+                {totaisReais ? formatCurrency(totaisReais.custo_real) : '—'}
               </span>
             </div>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-xs items-baseline">
+              <span className="text-muted-foreground">Receita</span>
+              <span className="font-bold tabular-nums text-right">{formatCurrency(totais.recPrev)}</span>
+              <span className="font-bold tabular-nums text-right text-dark/70">
+                {totaisReais ? formatCurrency(totaisReais.receita_realizada) : '—'}
+              </span>
+            </div>
+            <div className="border-t-2 border-grid pt-2 mt-2 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="font-black text-dark">Saldo Prev.</span>
+                <span className={cn('font-black tabular-nums', totais.saldo >= 0 ? 'text-teal-600' : 'text-red-500')}>
+                  {formatCurrency(totais.saldo)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="font-black text-dark">Saldo Real</span>
+                {saldoReal !== null ? (
+                  <span className={cn('font-black tabular-nums', saldoReal >= 0 ? 'text-teal-600' : 'text-red-500')}>
+                    {formatCurrency(saldoReal)}
+                  </span>
+                ) : (
+                  <span className="font-black tabular-nums text-muted-foreground">—</span>
+                )}
+              </div>
+            </div>
+            {totaisReais && (
+              <p className="text-[10px] text-muted-foreground italic pt-1">
+                Real: {formatDateTime(totaisReais.updated_at)}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -1090,15 +1123,32 @@ export default function FluxoObras() {
   // filtros para dados reais
   const [origensAP, setOrigensAP] = useState<string[]>(['Pago'])
   const [statusRec, setStatusRec] = useState<string[]>(['Recebida'])
-  const [realEnabled, setRealEnabled] = useState(false)
+  const lastRestoredMetaRef = useRef<string | null>(null)
 
   const { data: tree } = useFilterTree()
   const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(ano)
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
-  const { data: dadosReais, isLoading: loadingReal, refetch: carregarReal } =
-    useFluxoObrasReal(ano, origensAP, statusRec, realEnabled)
+  const { data: totaisReaisMap } = useGruposTotaisReais(ano)
+  const fluxoRealCache = useFluxoRealCache(grupoAtivoId, ano)
+  const atualizarFluxoReal = useAtualizarFluxoReal()
   const savePlanejamento = useSavePlanejamento()
   const deleteGrupo = useDeleteGrupo()
+
+  const dadosReais = fluxoRealCache.data?.data ?? null
+  const meta = fluxoRealCache.data?.meta ?? null
+  const loadingReal = fluxoRealCache.isFetching || atualizarFluxoReal.isPending
+
+  // Restaura filtros do snapshot ao carregar/atualizar (não sobrescreve edições manuais subsequentes)
+  useEffect(() => {
+    if (!meta) {
+      lastRestoredMetaRef.current = null
+      return
+    }
+    if (lastRestoredMetaRef.current === meta.updated_at) return
+    lastRestoredMetaRef.current = meta.updated_at
+    setOrigensAP(meta.origens)
+    setStatusRec(meta.status_rec)
+  }, [meta])
 
   // grupoAtivo sempre reflete o estado mais recente do servidor
   const grupoAtivo = useMemo(
@@ -1220,7 +1270,6 @@ export default function FluxoObras() {
 
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
-    setRealEnabled(false)
     setView('obras')
   }
 
@@ -1331,6 +1380,7 @@ export default function FluxoObras() {
                   key={g.id}
                   grupo={g}
                   totais={calcTotaisGrupo(g)}
+                  totaisReais={totaisReaisMap?.[String(g.id)] ?? null}
                   onAbrir={() => handleAbrirGrupo(g)}
                   onEditar={() => setModalState(g)}
                   onExcluir={() => handleExcluirGrupo(g)}
@@ -1461,19 +1511,38 @@ export default function FluxoObras() {
                   </label>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
-                  onClick={() => { setRealEnabled(true); carregarReal() }}
-                  disabled={loadingReal}
+                  onClick={() => {
+                    if (!grupoAtivoId) return
+                    atualizarFluxoReal.mutate({
+                      grupoId: grupoAtivoId,
+                      ano,
+                      origens: origensAP,
+                      statusRec,
+                    })
+                  }}
+                  disabled={loadingReal || !grupoAtivoId}
                   className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <RefreshCw className={cn('h-3 w-3', loadingReal && 'animate-spin')} />
-                  {loadingReal ? 'Carregando…' : dadosReais ? 'Atualizar Dados Reais' : 'Carregar Dados Reais'}
+                  {loadingReal ? 'Carregando…' : meta ? 'Atualizar Dados Reais' : 'Carregar Dados Reais'}
                 </button>
-                {dadosReais && !loadingReal && (
+                {meta && !loadingReal && (
                   <span className="text-xs font-bold text-teal-600">✓ Dados reais carregados</span>
                 )}
               </div>
+              <p className="text-xs text-muted-foreground">
+                {meta ? (
+                  <>
+                    Última atualização: <strong>{formatDateTime(meta.updated_at)}</strong>
+                    {meta.updated_by_name && <> · por {meta.updated_by_name}</>}
+                    {' · filtros: '}{[...meta.origens, ...meta.status_rec].join(', ') || '—'}
+                  </>
+                ) : (
+                  <span className="italic">Nunca atualizado · clique em "Carregar Dados Reais" para gerar o primeiro snapshot</span>
+                )}
+              </p>
             </div>
 
             <p className="text-xs text-muted-foreground">

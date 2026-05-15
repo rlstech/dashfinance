@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
-  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras, FluxoRealResponse,
+  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras,
+  FluxoRealCachedResponse, GrupoTotaisReais,
   UserBasic,
 } from '@/types'
 
@@ -146,35 +147,42 @@ export function useDeleteGrupo() {
   })
 }
 
-export function useFluxoObrasReal(
-  ano: number,
-  origens: string[],
-  statusRec: string[],
-  enabled: boolean,
-) {
-  return useQuery<FluxoRealResponse[]>({
-    queryKey: ['fluxo-obras-real', ano, [...origens].sort(), [...statusRec].sort()],
-    enabled,
+export function useFluxoRealCache(grupoId: number | null, ano: number) {
+  return useQuery<FluxoRealCachedResponse>({
+    queryKey: ['fluxo-real-cache', grupoId, ano],
+    enabled: grupoId !== null,
     staleTime: 1000 * 60 * 5,
-    queryFn: async () => {
-      const { useAuthStore } = await import('@/hooks/useAuth')
-      const token = useAuthStore.getState().token
-      const baseUrl = import.meta.env.VITE_API_URL || '/api'
-      const params = new URLSearchParams()
-      params.append('ano', String(ano))
-      origens.forEach((o) => params.append('origens', o))
-      statusRec.forEach((s) => params.append('status_rec', s))
-      const res = await fetch(`${baseUrl}/fluxo-obras/real?${params}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (res.status === 401) {
-        useAuthStore.getState().logout()
-        window.location.href = '/login'
-        throw new Error('Sessão expirada')
-      }
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
-      return res.json()
+    queryFn: () => api.get(`/fluxo-obras/grupo/${grupoId}/real`, { ano }),
+  })
+}
+
+interface AtualizarFluxoRealArgs {
+  grupoId: number
+  ano: number
+  origens: string[]
+  statusRec: string[]
+}
+
+export function useAtualizarFluxoReal() {
+  const queryClient = useQueryClient()
+  return useMutation<FluxoRealCachedResponse | null, Error, AtualizarFluxoRealArgs>({
+    mutationFn: ({ grupoId, ano, origens, statusRec }) =>
+      api.post(`/fluxo-obras/grupo/${grupoId}/real?ano=${ano}`, {
+        origens,
+        status_rec: statusRec,
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['fluxo-real-cache', variables.grupoId, variables.ano] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais', variables.ano] })
     },
+  })
+}
+
+export function useGruposTotaisReais(ano: number) {
+  return useQuery<Record<string, GrupoTotaisReais>>({
+    queryKey: ['grupos-totais-reais', ano],
+    queryFn: () => api.get('/fluxo-obras/grupos-totais-reais', { ano }),
+    staleTime: 1000 * 60 * 5,
   })
 }
 

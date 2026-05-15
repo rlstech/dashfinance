@@ -78,6 +78,29 @@ CREATE TABLE IF NOT EXISTS grupo_empresas_greedy (
     empresa  VARCHAR(200) NOT NULL,
     PRIMARY KEY (grupo_id, empresa)
 );
+
+CREATE TABLE IF NOT EXISTS fluxo_real_cache (
+    grupo_id          INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    ano               INTEGER NOT NULL,
+    obra_codigo       VARCHAR(200) NOT NULL,
+    mes               INTEGER NOT NULL CHECK (mes BETWEEN 1 AND 12),
+    custo_real        NUMERIC(15,2) NOT NULL DEFAULT 0,
+    receita_realizada NUMERIC(15,2) NOT NULL DEFAULT 0,
+    PRIMARY KEY (grupo_id, ano, obra_codigo, mes)
+);
+
+CREATE TABLE IF NOT EXISTS fluxo_real_cache_meta (
+    grupo_id   INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    ano        INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by INTEGER REFERENCES users(id),
+    origens    TEXT[] NOT NULL DEFAULT '{}',
+    status_rec TEXT[] NOT NULL DEFAULT '{}',
+    PRIMARY KEY (grupo_id, ano)
+);
+
+CREATE INDEX IF NOT EXISTS fluxo_real_cache_obra_idx
+    ON fluxo_real_cache (grupo_id, ano, obra_codigo);
 """
 
 
@@ -471,3 +494,145 @@ async def bulk_upsert_planejamento(items: list[dict]) -> int:
             ],
         )
     return len(items)
+
+
+# ── Cache de Dados Reais por Grupo ───────────────────────────────────────────
+
+async def get_fluxo_real_cache(
+    grupo_id: int, ano: int,
+) -> tuple[list[dict], dict | None]:
+    """Retorna (rows, meta) ou ([], None) se não houver snapshot."""
+    async with _pool.acquire() as conn:
+        meta_row = await conn.fetchrow(
+            """SELECT m.updated_at, m.updated_by, m.origens, m.status_rec, u.name AS updated_by_name
+               FROM fluxo_real_cache_meta m
+               LEFT JOIN users u ON u.id = m.updated_by
+               WHERE m.grupo_id=$1 AND m.ano=$2""",
+            grupo_id, ano,
+        )
+        if not meta_row:
+            return [], None
+        rows = await conn.fetch(
+            """SELECT obra_codigo, mes, custo_real, receita_realizada
+               FROM fluxo_real_cache
+               WHERE grupo_id=$1 AND ano=$2
+               ORDER BY obra_codigo, mes""",
+            grupo_id, ano,
+        )
+    return [dict(r) for r in rows], dict(meta_row)
+
+
+async def save_fluxo_real_cache(
+    grupo_id: int, ano: int, user_id: int,
+    rows: list[dict],
+    origens: list[str], status_rec: list[str],
+) -> dict:
+    """Substitui o snapshot do grupo/ano. Retorna o meta atualizado."""
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM fluxo_real_cache WHERE grupo_id=$1 AND ano=$2",
+                grupo_id, ano,
+            )
+            if rows:
+                await conn.executemany(
+                    """INSERT INTO fluxo_real_cache
+                          (grupo_id, ano, obra_codigo, mes, custo_real, receita_realizada)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    [
+                        (grupo_id, ano, r["obra_codigo"], r["mes"],
+                         r["custo_real"], r["receita_realizada"])
+                        for r in rows
+                    ],
+                )
+            meta = await conn.fetchrow(
+                """INSERT INTO fluxo_real_cache_meta
+                       (grupo_id, ano, updated_at, updated_by, origens, status_rec)
+                   VALUES ($1, $2, NOW(), $3, $4, $5)
+                   ON CONFLICT (grupo_id, ano) DO UPDATE
+                       SET updated_at=NOW(), updated_by=$3, origens=$4, status_rec=$5
+                   RETURNING updated_at, updated_by, origens, status_rec""",
+                grupo_id, ano, user_id, origens, status_rec,
+            )
+            name_row = await conn.fetchrow(
+                "SELECT name FROM users WHERE id=$1", user_id,
+            )
+    out = dict(meta)
+    out["updated_by_name"] = name_row["name"] if name_row else None
+    return out
+
+
+async def get_grupos_real_totais(
+    grupo_ids: list[int], ano: int,
+) -> dict[int, dict]:
+    """Retorna {grupo_id: {custo_real, receita_realizada, updated_at, origens, status_rec}}."""
+    if not grupo_ids:
+        return {}
+    async with _pool.acquire() as conn:
+        totais = await conn.fetch(
+            """SELECT grupo_id,
+                      COALESCE(SUM(custo_real), 0)        AS custo_real,
+                      COALESCE(SUM(receita_realizada), 0) AS receita_realizada
+               FROM fluxo_real_cache
+               WHERE grupo_id = ANY($1) AND ano = $2
+               GROUP BY grupo_id""",
+            grupo_ids, ano,
+        )
+        metas = await conn.fetch(
+            """SELECT grupo_id, updated_at, origens, status_rec
+               FROM fluxo_real_cache_meta
+               WHERE grupo_id = ANY($1) AND ano = $2""",
+            grupo_ids, ano,
+        )
+    tot_map = {r["grupo_id"]: r for r in totais}
+    result: dict[int, dict] = {}
+    for m in metas:
+        gid = m["grupo_id"]
+        t = tot_map.get(gid)
+        result[gid] = {
+            "custo_real": float(t["custo_real"]) if t else 0.0,
+            "receita_realizada": float(t["receita_realizada"]) if t else 0.0,
+            "updated_at": m["updated_at"],
+            "origens": list(m["origens"]),
+            "status_rec": list(m["status_rec"]),
+        }
+    return result
+
+
+async def is_grupo_visible_to_user(
+    grupo_id: int, user_id: int, is_admin: bool,
+) -> bool:
+    """True se o usuário pode visualizar o grupo (admin, dono ou compartilhado)."""
+    if is_admin:
+        async with _pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM grupos_obras WHERE id=$1", grupo_id,
+            )
+        return row is not None
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT 1 FROM grupos_obras g
+               WHERE g.id=$1
+                 AND (g.created_by=$2
+                      OR EXISTS (SELECT 1 FROM grupo_shares gs
+                                 WHERE gs.grupo_id=g.id AND gs.user_id=$2))""",
+            grupo_id, user_id,
+        )
+    return row is not None
+
+
+async def get_grupo_obras_e_greedy(grupo_id: int) -> tuple[list[str], list[str]]:
+    """Retorna (obras_diretas, empresas_greedy) do grupo."""
+    async with _pool.acquire() as conn:
+        obras_rows = await conn.fetch(
+            "SELECT obra_codigo FROM grupo_obra_items WHERE grupo_id=$1",
+            grupo_id,
+        )
+        greedy_rows = await conn.fetch(
+            "SELECT empresa FROM grupo_empresas_greedy WHERE grupo_id=$1",
+            grupo_id,
+        )
+    return (
+        [r["obra_codigo"] for r in obras_rows],
+        [r["empresa"] for r in greedy_rows],
+    )

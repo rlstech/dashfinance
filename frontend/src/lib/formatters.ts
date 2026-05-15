@@ -24,6 +24,14 @@ export function parseDate(ddmmyyyy: string): Date | null {
   return new Date(`${y}-${m}-${d}T00:00:00`)
 }
 
+export function formatDateTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function formatPercent(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'percent',

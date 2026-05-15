@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -99,3 +101,31 @@ class FluxoRealResponse(BaseModel):
     obra_codigo: str
     ano: int
     meses: list[FluxoRealMes]  # sempre 12 elementos
+
+
+# ── Cache persistido de Dados Reais ──────────────────────────────────────────
+
+class FluxoRealCacheMeta(BaseModel):
+    updated_at: datetime
+    updated_by: int | None = None
+    updated_by_name: str | None = None
+    origens: list[str] = []
+    status_rec: list[str] = []
+
+
+class FluxoRealCachedResponse(BaseModel):
+    data: list[FluxoRealResponse]
+    meta: FluxoRealCacheMeta | None = None
+
+
+class GrupoTotaisReais(BaseModel):
+    custo_real: float
+    receita_realizada: float
+    updated_at: datetime
+    origens: list[str] = []
+    status_rec: list[str] = []
+
+
+class AtualizarFluxoRealIn(BaseModel):
+    origens: list[str] = ["Pago"]
+    status_rec: list[str] = ["Recebida"]

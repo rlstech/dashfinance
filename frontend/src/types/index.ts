@@ -166,3 +166,24 @@ export interface FluxoRealResponse {
   ano: number
   meses: FluxoRealMes[]
 }
+
+export interface FluxoRealCacheMeta {
+  updated_at: string
+  updated_by: number | null
+  updated_by_name: string | null
+  origens: string[]
+  status_rec: string[]
+}
+
+export interface FluxoRealCachedResponse {
+  data: FluxoRealResponse[]
+  meta: FluxoRealCacheMeta | null
+}
+
+export interface GrupoTotaisReais {
+  custo_real: number
+  receita_realizada: number
+  updated_at: string
+  origens: string[]
+  status_rec: string[]
+}
