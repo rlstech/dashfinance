@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, Lock, RefreshCw, Search, Share2, Upload, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, FileDown, Lock, RefreshCw, Search, Share2, X } from 'lucide-react'
 import {
   useCreateGrupo,
   useDeleteGrupo,
@@ -7,13 +7,13 @@ import {
   useFluxoObrasTodas,
   useFluxoObrasReal,
   useGruposObras,
-  useImportarPlanilhaObras,
   useSavePlanejamento,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
 import { useAuthStore } from '@/hooks/useAuth'
 import { formatCurrency } from '@/lib/formatters'
+import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -1091,7 +1091,6 @@ export default function FluxoObras() {
   const [origensAP, setOrigensAP] = useState<string[]>(['Pago'])
   const [statusRec, setStatusRec] = useState<string[]>(['Recebida'])
   const [realEnabled, setRealEnabled] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: tree } = useFilterTree()
   const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(ano)
@@ -1099,7 +1098,6 @@ export default function FluxoObras() {
   const { data: dadosReais, isLoading: loadingReal, refetch: carregarReal } =
     useFluxoObrasReal(ano, origensAP, statusRec, realEnabled)
   const savePlanejamento = useSavePlanejamento()
-  const importarPlanilha = useImportarPlanilhaObras()
   const deleteGrupo = useDeleteGrupo()
 
   // grupoAtivo sempre reflete o estado mais recente do servidor
@@ -1240,19 +1238,29 @@ export default function FluxoObras() {
     })
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    importarPlanilha.mutate(file, {
-      onSuccess: (result) => {
-        const msg = `Importados: ${result.imported} registro(s).${
-          result.errors.length ? '\n\nErros:\n' + result.errors.join('\n') : ''
-        }`
-        alert(msg)
-      },
-      onError: (err) => alert(`Erro na importação: ${err.message}`),
+  function handleExportarPDF() {
+    if (!grupoAtivo || !obrasParaRender.length) return
+
+    const greedy = obrasGreedy?.sintetica
+    const custoReal = Array.from({ length: 12 }, (_, i) =>
+      obrasParaRender.reduce((s, o) => s + o.meses[i].custo_real, 0)
+      + (greedy?.meses[i].custo_real ?? 0),
+    )
+    const recReal = Array.from({ length: 12 }, (_, i) =>
+      obrasParaRender.reduce((s, o) => s + o.meses[i].receita_realizada, 0)
+      + (greedy?.meses[i].receita_realizada ?? 0),
+    )
+    const saldoMes = custoReal.map((c, i) => recReal[i] - c)
+    let acc = 0
+    const saldoAcc = saldoMes.map((s) => { acc += s; return acc })
+
+    exportFluxoObrasPDF({
+      grupo: grupoAtivo,
+      ano,
+      obras: obrasParaRender,
+      consolidado: { custoReal, recReal, saldoMes, saldoAcc },
+      demaisObras: greedy ?? null,
     })
-    e.target.value = ''
   }
 
   const seletor_ano = (
@@ -1373,14 +1381,13 @@ export default function FluxoObras() {
               </button>
             )}
             {seletor_ano}
-            <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importarPlanilha.isPending}
+              onClick={handleExportarPDF}
+              disabled={!obrasParaRender.length}
               className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
             >
-              <Upload className="h-3.5 w-3.5" />
-              {importarPlanilha.isPending ? 'Importando…' : 'Importar Planilha'}
+              <FileDown className="h-3.5 w-3.5" />
+              Exportar PDF
             </button>
           </div>
         </div>
