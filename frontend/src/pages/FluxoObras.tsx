@@ -626,7 +626,9 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
   const saldoPrev = totalRecPrev - totalCustoPrev
 
   const totalCustoReal = meses.reduce((s, m) => s + m.custo_real, 0)
-  const totalRecReal   = meses.reduce((s, m) => s + m.receita_realizada, 0)
+  const totalRecReal   = especial
+    ? especial.recRealizadaPct.reduce((s, v) => s + v, 0) + meses.reduce((s, m) => s + m.receita_realizada, 0)
+    : meses.reduce((s, m) => s + m.receita_realizada, 0)
   const saldoReal      = totalRecReal - totalCustoReal
 
   let accPlan = 0
@@ -635,8 +637,9 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
     accPlan += m.receita_prevista - m.custo_previsto
     return accPlan
   })
-  // Para obra especial, fluxo real usa Receita UAU; para normal, usa receita_realizada
-  const recRealParaAcc = especial ? meses.map((m) => m.receita_realizada) : meses.map((m) => m.receita_realizada)
+  const recRealParaAcc = especial
+    ? meses.map((m, i) => especial.recRealizadaPct[i] + m.receita_realizada)
+    : meses.map((m) => m.receita_realizada)
   const acumuladoReal = meses.map((m, i) => {
     accReal += recRealParaAcc[i] - m.custo_real
     return accReal
@@ -663,9 +666,9 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
         { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
         { label: 'Receita Prevista (%)', kind: 'readonly', values: meses.map((m) => m.receita_prevista) },
         { label: 'Receita Realizada (%)', kind: 'readonly', values: especial.recRealizadaPct },
-        { label: 'Receita UAU', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
+        { label: 'Receita Financeira', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
         { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
-        { label: 'Fluxo Acumulado Real (UAU)', kind: 'accumulated', values: acumuladoReal },
+        { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
       ]
     : [
         { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
