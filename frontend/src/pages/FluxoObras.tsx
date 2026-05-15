@@ -928,11 +928,23 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
   const totalRecReal   = recReal.reduce((s, v) => s + v, 0)
   const saldoAnual     = totalRecReal - totalCustoReal
 
-  type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean }
+  type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean; tooltipField?: 'custo_real' | 'receita_realizada' }
+
+  function buildTooltip(mesIdx: number, field: 'custo_real' | 'receita_realizada'): string | undefined {
+    const contribuintes = obras
+      .map((o) => ({ obra: o.obra_codigo, val: o.meses[mesIdx][field] }))
+      .filter((x) => x.val !== 0)
+    if (obrasGreedy) {
+      const val = obrasGreedy.meses[mesIdx][field]
+      if (val !== 0) contribuintes.push({ obra: 'Demais Obras', val })
+    }
+    if (!contribuintes.length) return undefined
+    return contribuintes.map((x) => `${x.obra}: ${formatCurrency(x.val)}`).join('\n')
+  }
 
   const rows: Row[] = [
-    { label: 'Custo Real',        values: custoReal, total: totalCustoReal },
-    { label: 'Receita Realizada', values: recReal,   total: totalRecReal },
+    { label: 'Custo Real',        values: custoReal, total: totalCustoReal, tooltipField: 'custo_real' },
+    { label: 'Receita Realizada', values: recReal,   total: totalRecReal,   tooltipField: 'receita_realizada' },
     { label: 'Saldo do Mês',      values: saldoMes,  total: saldoMes.reduce((s, v) => s + v, 0), separator: true },
     { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[11], bold: true },
   ]
@@ -1004,20 +1016,33 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
                     >
                       {row.label}
                     </td>
-                    {row.values.map((val, i) => (
-                      <td key={i} className="px-1 py-1">
-                        {isSaldo || row.bold ? (
-                          <ValueCell value={val} bold={row.bold} />
-                        ) : (
-                          <span className={cn(
-                            'block w-full text-right tabular-nums text-xs px-1 py-0.5',
-                            val === 0 ? 'text-muted-foreground/30' : 'text-dark',
-                          )}>
-                            {val === 0 ? '—' : formatCurrency(val)}
-                          </span>
-                        )}
-                      </td>
-                    ))}
+                    {row.values.map((val, i) => {
+                      const tooltip = row.tooltipField ? buildTooltip(i, row.tooltipField) : undefined
+                      return (
+                        <td key={i} className="px-1 py-1">
+                          {isSaldo || row.bold ? (
+                            <ValueCell value={val} bold={row.bold} />
+                          ) : tooltip ? (
+                            <span
+                              title={tooltip}
+                              className={cn(
+                                'block w-full text-right tabular-nums text-xs px-1 py-0.5 cursor-help underline decoration-dotted decoration-muted-foreground/40',
+                                val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                              )}
+                            >
+                              {val === 0 ? '—' : formatCurrency(val)}
+                            </span>
+                          ) : (
+                            <span className={cn(
+                              'block w-full text-right tabular-nums text-xs px-1 py-0.5',
+                              val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                            )}>
+                              {val === 0 ? '—' : formatCurrency(val)}
+                            </span>
+                          )}
+                        </td>
+                      )
+                    })}
                     <td className={cn('px-1 py-1 border-l-2 border-dark', rowBg)}>
                       {isSaldo || row.bold ? (
                         <ValueCell value={row.total} bold={row.bold} />
