@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import asyncpg
 from app.config import settings
@@ -82,8 +83,17 @@ CREATE TABLE IF NOT EXISTS grupo_empresas_greedy (
 
 async def init_pool():
     global _pool
-    _pool = await asyncpg.create_pool(settings.PG_DSN, min_size=2, max_size=10)
-    log.info("PostgreSQL pool criado")
+    for attempt in range(1, 11):
+        try:
+            _pool = await asyncpg.create_pool(settings.PG_DSN, min_size=2, max_size=10)
+            log.info("PostgreSQL pool criado")
+            return
+        except Exception as e:
+            if attempt < 10:
+                log.warning("PostgreSQL indisponível (tentativa %d/10): %s — aguardando 5s", attempt, e)
+                await asyncio.sleep(5)
+            else:
+                raise
 
 
 async def close_pool():
