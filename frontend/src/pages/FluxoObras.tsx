@@ -19,12 +19,23 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, UpsertPlanejamentoIn } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, Periodo, UpsertPlanejamentoIn } from '@/types'
+import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 const currentYear = new Date().getFullYear()
-const ANOS = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1]
+
+function periodoSlots(p: Periodo): Array<{ ano: number; mes: number }> {
+  const slots: Array<{ ano: number; mes: number }> = []
+  let { anoInicio: ano, mesInicio: mes } = p
+  while (ano < p.anoFim || (ano === p.anoFim && mes <= p.mesFim)) {
+    slots.push({ ano, mes })
+    mes++
+    if (mes > 12) { mes = 1; ano++ }
+  }
+  return slots
+}
 
 // ── Célula editável inline ────────────────────────────────────────────────────
 
@@ -667,14 +678,13 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
 
 interface ObraSectionProps {
   data: FluxoPlanejamentoResponse
-  ano: number
   savePending: boolean
   onSave: (payload: UpsertPlanejamentoIn) => void
   defaultCollapsed: boolean
   especial?: { recRealizadaPct: number[] }
 }
 
-function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especial }: ObraSectionProps) {
+function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: ObraSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   const meses: FluxoMesRow[] = data.meses
@@ -703,12 +713,12 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
     return accReal
   })
 
-  function handleSave(mes: number, field: 'custo_previsto' | 'receita_prevista', value: number) {
-    const current = meses[mes - 1]
+  function handleSave(idx: number, field: 'custo_previsto' | 'receita_prevista', value: number) {
+    const current = meses[idx]
     onSave({
       obra_codigo: data.obra_codigo,
-      ano,
-      mes,
+      ano: current.ano,
+      mes: current.mes,
       custo_previsto: field === 'custo_previsto' ? value : current.custo_previsto,
       receita_prevista: field === 'receita_prevista' ? value : current.receita_prevista,
     })
@@ -787,9 +797,9 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
                 <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
                   Métrica
                 </th>
-                {MESES.map((m) => (
-                  <th key={m} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
-                    {m}
+                {meses.map((m) => (
+                  <th key={`${m.ano}-${m.mes}`} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
+                    {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
                   </th>
                 ))}
               </tr>
@@ -817,7 +827,7 @@ function ObraSection({ data, ano, savePending, onSave, defaultCollapsed, especia
                           <EditableCell
                             value={val}
                             disabled={savePending}
-                            onSave={(v) => handleSave(mesIdx + 1, (row as { field: 'custo_previsto' | 'receita_prevista' }).field, v)}
+                            onSave={(v) => handleSave(mesIdx, (row as { field: 'custo_previsto' | 'receita_prevista' }).field, v)}
                           />
                         ) : (
                           <ValueCell value={val} bold={isAccumulated} />
@@ -911,8 +921,10 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
                 <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
                   Métrica
                 </th>
-                {MESES.map((m) => (
-                  <th key={m} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">{m}</th>
+                {meses.map((m) => (
+                  <th key={`${m.ano}-${m.mes}`} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
+                    {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -978,10 +990,11 @@ interface ConsolidadoGrupoProps {
 function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const custoReal = Array.from({ length: 12 }, (_, i) =>
+  const nSlots = obras[0]?.meses.length ?? 0
+  const custoReal = Array.from({ length: nSlots }, (_, i) =>
     obras.reduce((s, o) => s + o.meses[i].custo_real, 0) + (obrasGreedy?.meses[i].custo_real ?? 0)
   )
-  const recReal   = Array.from({ length: 12 }, (_, i) =>
+  const recReal   = Array.from({ length: nSlots }, (_, i) =>
     obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0) + (obrasGreedy?.meses[i].receita_realizada ?? 0)
   )
   const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
@@ -1011,7 +1024,7 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
     { label: 'Custo Real',        values: custoReal, total: totalCustoReal, tooltipField: 'custo_real' },
     { label: 'Receita Realizada', values: recReal,   total: totalRecReal,   tooltipField: 'receita_realizada' },
     { label: 'Saldo do Mês',      values: saldoMes,  total: saldoMes.reduce((s, v) => s + v, 0), separator: true },
-    { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[11], bold: true },
+    { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[nSlots - 1], bold: true },
   ]
 
   return (
@@ -1050,9 +1063,9 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
                 <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
                   Métrica
                 </th>
-                {MESES.map((m) => (
-                  <th key={m} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
-                    {m}
+                {(obras[0]?.meses ?? []).map((m) => (
+                  <th key={`${m.ano}-${m.mes}`} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
+                    {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
                   </th>
                 ))}
                 <th className="text-right font-black uppercase tracking-widest px-2 py-2 w-24 border-l-2 border-dark bg-bgBase">
@@ -1140,7 +1153,10 @@ export default function FluxoObras() {
 
   const currentUser = useAuthStore((s) => s.user)
 
-  const [ano, setAno] = useState(currentYear)
+  const [periodo, setPeriodo] = useState<Periodo>({
+    anoInicio: currentYear, mesInicio: 1,
+    anoFim: currentYear, mesFim: 12,
+  })
   const [view, setView] = useState<'grupos' | 'obras'>('grupos')
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
   // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
@@ -1151,10 +1167,10 @@ export default function FluxoObras() {
   const lastRestoredMetaRef = useRef<string | null>(null)
 
   const { data: tree } = useFilterTree()
-  const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(ano)
+  const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(periodo)
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
-  const { data: totaisReaisMap } = useGruposTotaisReais(ano)
-  const fluxoRealCache = useFluxoRealCache(grupoAtivoId, ano)
+  const { data: totaisReaisMap } = useGruposTotaisReais(periodo.anoInicio)
+  const fluxoRealCache = useFluxoRealCache(grupoAtivoId, periodo)
   const atualizarFluxoReal = useAtualizarFluxoReal()
   const savePlanejamento = useSavePlanejamento()
   const deleteGrupo = useDeleteGrupo()
@@ -1225,10 +1241,11 @@ export default function FluxoObras() {
       const regulares = result.filter((o) => o.obra_codigo !== especial)
       result = result.map((obra) => {
         if (obra.obra_codigo !== especial) return obra
-        const recPrevCalc = Array.from({ length: 12 }, (_, i) =>
+        const nSlots = regulares[0]?.meses.length ?? 0
+        const recPrevCalc = Array.from({ length: nSlots }, (_, i) =>
           regulares.reduce((s, o) => s + o.meses[i].receita_prevista * ((pcts[o.obra_codigo] ?? 0) / 100), 0),
         )
-        const recRealPct = Array.from({ length: 12 }, (_, i) =>
+        const recRealPct = Array.from({ length: nSlots }, (_, i) =>
           regulares.reduce((s, o) => s + o.meses[i].receita_realizada * ((pcts[o.obra_codigo] ?? 0) / 100), 0),
         )
         return {
@@ -1273,25 +1290,30 @@ export default function FluxoObras() {
       }
     })
 
-    const meses = Array.from({ length: 12 }, (_, i) => ({
-      mes: i + 1,
-      custo_previsto: merged.reduce((s, o) => s + o.meses[i].custo_previsto, 0),
-      receita_prevista: merged.reduce((s, o) => s + o.meses[i].receita_prevista, 0),
-      custo_real: merged.reduce((s, o) => s + o.meses[i].custo_real, 0),
-      receita_realizada: merged.reduce((s, o) => s + o.meses[i].receita_realizada, 0),
-    }))
+    const nSlots = merged[0]?.meses.length ?? planejamento[0]?.meses.length ?? 0
+    const meses = Array.from({ length: nSlots }, (_, i) => {
+      const slot = merged[0]?.meses[i]
+      return {
+        mes: slot?.mes ?? i + 1,
+        ano: slot?.ano ?? periodo.anoInicio,
+        custo_previsto: merged.reduce((s, o) => s + o.meses[i].custo_previsto, 0),
+        receita_prevista: merged.reduce((s, o) => s + o.meses[i].receita_prevista, 0),
+        custo_real: merged.reduce((s, o) => s + o.meses[i].custo_real, 0),
+        receita_realizada: merged.reduce((s, o) => s + o.meses[i].receita_realizada, 0),
+      }
+    })
 
     return {
       sintetica: {
         obra_codigo: '__DEMAIS_OBRAS__',
-        ano,
+        ano: periodo.anoInicio,
         meses,
         _greedyCount: greedyObras.length,
         _greedyEmpresas: grupoAtivo.empresas_greedy,
       },
       breakdown: merged,
     }
-  }, [grupoAtivo, tree, todasObras, dadosReais, ano])
+  }, [grupoAtivo, tree, todasObras, dadosReais, periodo])
 
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
@@ -1315,12 +1337,13 @@ export default function FluxoObras() {
   function handleExportarPDF() {
     if (!grupoAtivo || !obrasParaRender.length) return
 
+    const nSlots = obrasParaRender[0].meses.length
     const greedy = obrasGreedy?.sintetica
-    const custoReal = Array.from({ length: 12 }, (_, i) =>
+    const custoReal = Array.from({ length: nSlots }, (_, i) =>
       obrasParaRender.reduce((s, o) => s + o.meses[i].custo_real, 0)
       + (greedy?.meses[i].custo_real ?? 0),
     )
-    const recReal = Array.from({ length: 12 }, (_, i) =>
+    const recReal = Array.from({ length: nSlots }, (_, i) =>
       obrasParaRender.reduce((s, o) => s + o.meses[i].receita_realizada, 0)
       + (greedy?.meses[i].receita_realizada ?? 0),
     )
@@ -1328,25 +1351,22 @@ export default function FluxoObras() {
     let acc = 0
     const saldoAcc = saldoMes.map((s) => { acc += s; return acc })
 
+    const colunas = obrasParaRender[0].meses.map((m) => ({
+      label: `${MESES[m.mes - 1]}/${String(m.ano).slice(2)}`,
+    }))
+
     exportFluxoObrasPDF({
       grupo: grupoAtivo,
-      ano,
+      periodo,
+      colunas,
       obras: obrasParaRender,
       consolidado: { custoReal, recReal, saldoMes, saldoAcc },
       demaisObras: greedy ?? null,
     })
   }
 
-  const seletor_ano = (
-    <select
-      className="text-xs font-bold uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white focus:outline-none focus:border-brand"
-      value={ano}
-      onChange={(e) => setAno(Number(e.target.value))}
-    >
-      {ANOS.map((y) => (
-        <option key={y} value={y}>{y}</option>
-      ))}
-    </select>
+  const seletor_periodo = (
+    <PeriodoMesesSelector periodo={periodo} onChange={setPeriodo} />
   )
 
   const modal = modalState !== null && (
@@ -1370,7 +1390,7 @@ export default function FluxoObras() {
               Fluxo de Caixa Gerencial de Obras
             </h1>
             <div className="flex items-center gap-3">
-              {seletor_ano}
+              {seletor_periodo}
               <button
                 onClick={() => setModalState('novo')}
                 className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors"
@@ -1455,7 +1475,7 @@ export default function FluxoObras() {
                 Editar Grupo
               </button>
             )}
-            {seletor_ano}
+            {seletor_periodo}
             <button
               onClick={handleExportarPDF}
               disabled={!obrasParaRender.length}
@@ -1542,7 +1562,7 @@ export default function FluxoObras() {
                     if (!grupoAtivoId) return
                     atualizarFluxoReal.mutate({
                       grupoId: grupoAtivoId,
-                      ano,
+                      periodo,
                       origens: origensAP,
                       statusRec,
                     })
@@ -1583,7 +1603,6 @@ export default function FluxoObras() {
               <ObraSection
                 key={obra.obra_codigo}
                 data={obra}
-                ano={ano}
                 savePending={savePlanejamento.isPending}
                 onSave={(payload) => savePlanejamento.mutate(payload)}
                 defaultCollapsed={obrasDoGrupo.length > 5}

@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { FluxoPlanejamentoResponse, GrupoObras } from '@/types'
+import type { FluxoPlanejamentoResponse, GrupoObras, Periodo } from '@/types'
 
 export type ObraRender = FluxoPlanejamentoResponse & {
   _isEspecial?: boolean
@@ -14,7 +14,8 @@ export type DemaisObrasData = FluxoPlanejamentoResponse & {
 
 export interface FluxoObrasExportData {
   grupo: GrupoObras
-  ano: number
+  periodo: Periodo
+  colunas: { label: string }[]
   obras: ObraRender[]
   consolidado: {
     custoReal: number[]
@@ -24,8 +25,6 @@ export interface FluxoObrasExportData {
   }
   demaisObras?: DemaisObrasData | null
 }
-
-const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 // Paleta — alinhada com exportPivot.ts
 const COLOR_HEADER_BG: [number, number, number] = [40, 40, 40]
@@ -45,7 +44,6 @@ const MARGIN_X = 8
 const CONTENT_W = PAGE_W - MARGIN_X * 2 // 281
 const LABEL_W = 38
 const TOTAL_W = 22
-const MONTH_W = (CONTENT_W - LABEL_W - TOTAL_W) / 12
 
 const FONT = 7
 const CELL_PAD = 1.5
@@ -123,13 +121,14 @@ function drawBanner(
   return y + h
 }
 
-function makeColStyles(): Record<number, object> {
+function makeColStyles(nCols: number): Record<number, object> {
+  const monthW = (CONTENT_W - LABEL_W - TOTAL_W) / nCols
   const styles: Record<number, object> = {
     0: { halign: 'left', cellWidth: LABEL_W, fontStyle: 'bold' },
-    13: { cellWidth: TOTAL_W, fontStyle: 'bold' },
+    [nCols + 1]: { cellWidth: TOTAL_W, fontStyle: 'bold' },
   }
-  for (let i = 1; i <= 12; i++) {
-    styles[i] = { cellWidth: MONTH_W }
+  for (let i = 1; i <= nCols; i++) {
+    styles[i] = { cellWidth: monthW }
   }
   return styles
 }
@@ -138,9 +137,12 @@ function renderTable(
   doc: jsPDF,
   startY: number,
   rows: SectionRow[],
+  colunas: { label: string }[],
 ): number {
-  const headers = ['Métrica', ...MESES, 'Total']
+  const nCols = colunas.length
+  const headers = ['Métrica', ...colunas.map((c) => c.label), 'Total']
   const body = buildBody(rows)
+  const cellPad = nCols > 14 ? 1.0 : CELL_PAD
 
   autoTable(doc, {
     startY,
@@ -151,7 +153,7 @@ function renderTable(
     margin: { left: MARGIN_X, right: MARGIN_X, top: MARGIN_X + 4, bottom: MARGIN_X },
     styles: {
       fontSize: FONT,
-      cellPadding: { top: CELL_PAD, bottom: CELL_PAD, left: CELL_PAD, right: CELL_PAD },
+      cellPadding: { top: cellPad, bottom: cellPad, left: cellPad, right: cellPad },
       halign: 'right',
       overflow: 'linebreak',
       lineColor: COLOR_RULE,
@@ -164,7 +166,7 @@ function renderTable(
       fontSize: FONT,
       halign: 'center',
     },
-    columnStyles: makeColStyles(),
+    columnStyles: makeColStyles(nCols),
     didParseCell: (hookData) => {
       if (hookData.section !== 'body') return
       const row = rows[hookData.row.index]
@@ -196,7 +198,7 @@ function buildConsolidadoRows(d: FluxoObrasExportData['consolidado']): SectionRo
     { label: 'Custo Real', values: d.custoReal, total: totalOf(d.custoReal) },
     { label: 'Receita Realizada', values: d.recReal, total: totalOf(d.recReal) },
     { label: 'Saldo do Mês', values: d.saldoMes, total: totalOf(d.saldoMes) },
-    { label: 'Saldo Acumulado', values: d.saldoAcc, total: d.saldoAcc[11], emphasis: true },
+    { label: 'Saldo Acumulado', values: d.saldoAcc, total: d.saldoAcc[d.saldoAcc.length - 1], emphasis: true },
   ]
 }
 
@@ -226,8 +228,8 @@ function buildObraRows(obra: ObraRender): SectionRow[] {
       { label: 'Receita Prevista (%)', values: recPrev },
       { label: 'Receita Realizada (%)', values: recRealPct },
       { label: 'Receita Financeira', values: recFinanceira },
-      { label: 'Fluxo Acumulado Planejado', values: accumuladoPlan, total: accumuladoPlan[11], emphasis: true },
-      { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[11], emphasis: true },
+      { label: 'Fluxo Acumulado Planejado', values: accumuladoPlan, total: accumuladoPlan[accumuladoPlan.length - 1], emphasis: true },
+      { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[accumuladoReal.length - 1], emphasis: true },
     ]
   }
 
@@ -242,8 +244,8 @@ function buildObraRows(obra: ObraRender): SectionRow[] {
     { label: 'Custo Real', values: custoReal },
     { label: 'Receita Prevista', values: recPrev },
     { label: 'Receita Realizada', values: recReal },
-    { label: 'Fluxo Acumulado Planejado', values: accumuladoPlan, total: accumuladoPlan[11], emphasis: true },
-    { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[11], emphasis: true },
+    { label: 'Fluxo Acumulado Planejado', values: accumuladoPlan, total: accumuladoPlan[accumuladoPlan.length - 1], emphasis: true },
+    { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[accumuladoReal.length - 1], emphasis: true },
   ]
 }
 
@@ -261,12 +263,12 @@ function buildDemaisObrasRows(d: DemaisObrasData): SectionRow[] {
     { label: 'Receita Prevista', values: meses.map((m) => m.receita_prevista) },
     { label: 'Custo Real', values: custoReal },
     { label: 'Receita Realizada', values: recReal },
-    { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[11], emphasis: true },
+    { label: 'Fluxo Acumulado Real', values: accumuladoReal, total: accumuladoReal[accumuladoReal.length - 1], emphasis: true },
   ]
 }
 
 export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
-  const { grupo, ano, obras, consolidado, demaisObras } = data
+  const { grupo, periodo, colunas, obras, consolidado, demaisObras } = data
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
   // ── Cabeçalho ─────────────────────────────────────────────────────────────
@@ -291,8 +293,11 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   const obrasCount = obras.length
+  const periodoLabel = colunas.length > 0
+    ? `PERÍODO: ${colunas[0].label} → ${colunas[colunas.length - 1].label}`
+    : `ANO: ${periodo.anoInicio}`
   doc.text(
-    `ANO: ${ano}  ·  OBRAS NO GRUPO: ${obrasCount}  ·  GERADO EM: ${nowStamp()}`,
+    `${periodoLabel}  ·  OBRAS NO GRUPO: ${obrasCount}  ·  GERADO EM: ${nowStamp()}`,
     MARGIN_X,
     y,
   )
@@ -330,7 +335,7 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
     COLOR_BAND_DARK,
     COLOR_WHITE,
   )
-  y = renderTable(doc, y, buildConsolidadoRows(consolidado))
+  y = renderTable(doc, y, buildConsolidadoRows(consolidado), colunas)
   y += 6
 
   // ── Seção por obra ────────────────────────────────────────────────────────
@@ -346,7 +351,7 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
       COLOR_BAND_ACCENT,
       COLOR_DARK,
     )
-    y = renderTable(doc, y, rows)
+    y = renderTable(doc, y, rows, colunas)
     y += 5
   }
 
@@ -363,7 +368,7 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
       COLOR_BAND_OBRA,
       COLOR_DARK,
     )
-    y = renderTable(doc, y, rows)
+    y = renderTable(doc, y, rows, colunas)
   }
 
   // ── Rodapé com paginação ──────────────────────────────────────────────────
@@ -373,11 +378,10 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     doc.setTextColor(120, 120, 120)
-    doc.text(
-      `${grupo.nome} · ${ano}`,
-      MARGIN_X,
-      PAGE_H - 4,
-    )
+    const rodapeLabel = colunas.length > 0
+      ? `${grupo.nome} · ${colunas[0].label}→${colunas[colunas.length - 1].label}`
+      : `${grupo.nome} · ${periodo.anoInicio}`
+    doc.text(rodapeLabel, MARGIN_X, PAGE_H - 4)
     doc.text(
       `Página ${i} de ${total}`,
       PAGE_W - MARGIN_X,
@@ -387,5 +391,8 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
   }
 
   const safeName = grupo.nome.replace(/[^a-zA-Z0-9]/g, '_')
-  doc.save(`fluxo_obras_${safeName}_${ano}.pdf`)
+  const periodoStr = colunas.length > 0
+    ? `${colunas[0].label}_${colunas[colunas.length - 1].label}`.replace(/\//g, '')
+    : String(periodo.anoInicio)
+  doc.save(`fluxo_obras_${safeName}_${periodoStr}.pdf`)
 }

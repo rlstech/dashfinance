@@ -134,8 +134,16 @@ export interface UserBasic {
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
 
+export interface Periodo {
+  anoInicio: number
+  mesInicio: number
+  anoFim: number
+  mesFim: number
+}
+
 export interface FluxoMesRow {
   mes: number
+  ano: number
   custo_previsto: number
   receita_prevista: number
   custo_real: number
@@ -163,6 +171,7 @@ export interface BulkImportResult {
 
 export interface FluxoRealMes {
   mes: number
+  ano: number
   custo_real: number
   receita_realizada: number
 }
@@ -179,6 +188,7 @@ export interface FluxoRealCacheMeta {
   updated_by_name: string | null
   origens: string[]
   status_rec: string[]
+  anos_cobertos: number[]
 }
 
 export interface FluxoRealCachedResponse {

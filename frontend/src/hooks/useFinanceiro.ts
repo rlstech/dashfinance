@@ -3,7 +3,7 @@ import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
   FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras,
-  FluxoRealCachedResponse, GrupoTotaisReais,
+  FluxoRealCachedResponse, GrupoTotaisReais, Periodo,
   UserBasic,
 } from '@/types'
 
@@ -79,10 +79,15 @@ export function useSaveSaldos() {
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
 
-export function useFluxoObrasTodas(ano: number) {
+export function useFluxoObrasTodas(periodo: Periodo) {
   return useQuery<FluxoPlanejamentoResponse[]>({
-    queryKey: ['fluxo-obras-todas', ano],
-    queryFn: () => api.get('/fluxo-obras/todas', { ano }),
+    queryKey: ['fluxo-obras-todas', periodo],
+    queryFn: () => api.get('/fluxo-obras/todas', {
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
     staleTime: 1000 * 60 * 5,
   })
 }
@@ -101,7 +106,7 @@ export function useSavePlanejamento() {
   return useMutation<null, Error, UpsertPlanejamentoIn>({
     mutationFn: (body) => api.post('/fluxo-obras/planejamento', body),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas', variables.ano] })
+      queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas'] })
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano] })
     },
   })
@@ -147,18 +152,23 @@ export function useDeleteGrupo() {
   })
 }
 
-export function useFluxoRealCache(grupoId: number | null, ano: number) {
+export function useFluxoRealCache(grupoId: number | null, periodo: Periodo) {
   return useQuery<FluxoRealCachedResponse>({
-    queryKey: ['fluxo-real-cache', grupoId, ano],
+    queryKey: ['fluxo-real-cache', grupoId, periodo],
     enabled: grupoId !== null,
     staleTime: 1000 * 60 * 5,
-    queryFn: () => api.get(`/fluxo-obras/grupo/${grupoId}/real`, { ano }),
+    queryFn: () => api.get(`/fluxo-obras/grupo/${grupoId}/real`, {
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
   })
 }
 
 interface AtualizarFluxoRealArgs {
   grupoId: number
-  ano: number
+  periodo: Periodo
   origens: string[]
   statusRec: string[]
 }
@@ -166,14 +176,14 @@ interface AtualizarFluxoRealArgs {
 export function useAtualizarFluxoReal() {
   const queryClient = useQueryClient()
   return useMutation<FluxoRealCachedResponse | null, Error, AtualizarFluxoRealArgs>({
-    mutationFn: ({ grupoId, ano, origens, statusRec }) =>
-      api.post(`/fluxo-obras/grupo/${grupoId}/real?ano=${ano}`, {
-        origens,
-        status_rec: statusRec,
-      }),
+    mutationFn: ({ grupoId, periodo, origens, statusRec }) =>
+      api.post(
+        `/fluxo-obras/grupo/${grupoId}/real?ano_inicio=${periodo.anoInicio}&mes_inicio=${periodo.mesInicio}&ano_fim=${periodo.anoFim}&mes_fim=${periodo.mesFim}`,
+        { origens, status_rec: statusRec },
+      ),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['fluxo-real-cache', variables.grupoId, variables.ano] })
-      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais', variables.ano] })
+      queryClient.invalidateQueries({ queryKey: ['fluxo-real-cache', variables.grupoId, variables.periodo] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais', variables.periodo.anoInicio] })
     },
   })
 }

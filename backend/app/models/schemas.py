@@ -66,6 +66,7 @@ class FilterTree(BaseModel):
 
 class FluxoMesRow(BaseModel):
     mes: int
+    ano: int = 0
     custo_previsto: float = 0.0
     receita_prevista: float = 0.0
     custo_real: float = 0.0         # TODO: query UAU
@@ -75,7 +76,7 @@ class FluxoMesRow(BaseModel):
 class FluxoPlanejamentoResponse(BaseModel):
     obra_codigo: str
     ano: int
-    meses: list[FluxoMesRow]  # sempre 12 elementos
+    meses: list[FluxoMesRow]
 
 
 class UpsertPlanejamentoIn(BaseModel):
@@ -93,6 +94,7 @@ class BulkImportResult(BaseModel):
 
 class FluxoRealMes(BaseModel):
     mes: int
+    ano: int = 0
     custo_real: float = 0.0
     receita_realizada: float = 0.0
 
@@ -100,7 +102,7 @@ class FluxoRealMes(BaseModel):
 class FluxoRealResponse(BaseModel):
     obra_codigo: str
     ano: int
-    meses: list[FluxoRealMes]  # sempre 12 elementos
+    meses: list[FluxoRealMes]
 
 
 # ── Cache persistido de Dados Reais ──────────────────────────────────────────
@@ -111,6 +113,7 @@ class FluxoRealCacheMeta(BaseModel):
     updated_by_name: str | None = None
     origens: list[str] = []
     status_rec: list[str] = []
+    anos_cobertos: list[int] = []
 
 
 class FluxoRealCachedResponse(BaseModel):
