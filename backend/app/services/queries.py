@@ -14,7 +14,7 @@ BLOCKED_BANCOS: dict[str, set[str]] = {
     "GAMA 01": {"-1", "998"},
     "TRUST": {"-1", "998"},
     "DRESDEN": {"-1", "341"},
-    "CONSÓRCIO HMSJ": {"-1", "998"},
+    "CONSÓRCIO HMSJ": {"-1"},
 }
 
 # Contas específicas a excluir por empresa → banco → set de contas.
