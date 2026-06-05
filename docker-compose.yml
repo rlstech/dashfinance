@@ -27,8 +27,10 @@ services:
       - PG_DSN=postgresql://postgres:Mfcd62!!Mfcd62Az@postgres_postgres:5432/dash
       - JWT_SECRET=${JWT_SECRET}
     networks:
-      - network_public
-      - dashfinance_internal
+      network_public:
+        aliases:
+          - uaudash-backend
+      dashfinance_internal: {}
     depends_on:
       - redis
 
