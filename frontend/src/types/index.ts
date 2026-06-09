@@ -154,6 +154,8 @@ export interface FluxoPlanejamentoResponse {
   obra_codigo: string
   ano: number
   meses: FluxoMesRow[]
+  custo_global: number
+  receita_global: number
 }
 
 export interface UpsertPlanejamentoIn {
@@ -162,6 +164,27 @@ export interface UpsertPlanejamentoIn {
   mes: number
   custo_previsto: number
   receita_prevista: number
+}
+
+export interface SaveObraPlanejamentoIn {
+  custo_global: number
+  receita_global: number
+  meses: FluxoMesRow[]
+}
+
+export interface PlanejamentoLogEntry {
+  ano: number
+  mes: number
+  campo: 'custo_previsto' | 'receita_prevista'
+  valor_anterior: number
+  valor_novo: number
+  changed_at: string
+  changed_by_name: string | null
+}
+
+export interface GrupoTotaisPrevistos {
+  custo_prev: number
+  receita_prev: number
 }
 
 export interface BulkImportResult {

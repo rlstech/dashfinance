@@ -2,8 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
-  FluxoPlanejamentoResponse, UpsertPlanejamentoIn, BulkImportResult, GrupoObras,
-  FluxoRealCachedResponse, GrupoTotaisReais, Periodo,
+  FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
+  FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
   UserBasic,
 } from '@/types'
 
@@ -79,10 +79,12 @@ export function useSaveSaldos() {
 
 // ── Fluxo de Caixa Gerencial de Obras ────────────────────────────────────────
 
-export function useFluxoObrasTodas(periodo: Periodo) {
+export function useFluxoObrasTodas(grupoId: number | null, periodo: Periodo) {
   return useQuery<FluxoPlanejamentoResponse[]>({
-    queryKey: ['fluxo-obras-todas', periodo],
+    queryKey: ['fluxo-obras-todas', grupoId, periodo],
+    enabled: grupoId !== null,
     queryFn: () => api.get('/fluxo-obras/todas', {
+      grupo_id: grupoId,
       ano_inicio: periodo.anoInicio,
       mes_inicio: periodo.mesInicio,
       ano_fim: periodo.anoFim,
@@ -92,23 +94,46 @@ export function useFluxoObrasTodas(periodo: Periodo) {
   })
 }
 
-export function useFluxoObras(obraCodigo: string | null, ano: number) {
-  return useQuery<FluxoPlanejamentoResponse>({
-    queryKey: ['fluxo-obras', obraCodigo, ano],
-    queryFn: () => api.get('/fluxo-obras/planejamento', { obra_codigo: obraCodigo!, ano }),
-    enabled: !!obraCodigo,
+export function useGruposTotaisPrevistos(periodo: Periodo) {
+  return useQuery<Record<string, GrupoTotaisPrevistos>>({
+    queryKey: ['grupos-totais-previstos', periodo],
+    queryFn: () => api.get('/fluxo-obras/grupos-totais-previstos', {
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
     staleTime: 1000 * 60 * 5,
   })
 }
 
-export function useSavePlanejamento() {
+interface SaveObraArgs {
+  grupoId: number
+  obraCodigo: string
+  body: SaveObraPlanejamentoIn
+}
+
+export function useSaveObraPlanejamento() {
   const queryClient = useQueryClient()
-  return useMutation<null, Error, UpsertPlanejamentoIn>({
-    mutationFn: (body) => api.post('/fluxo-obras/planejamento', body),
+  return useMutation<null, Error, SaveObraArgs>({
+    mutationFn: ({ grupoId, obraCodigo, body }) =>
+      api.post(`/fluxo-obras/grupo/${grupoId}/obra/${encodeURIComponent(obraCodigo)}/planejamento`, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['fluxo-obras-todas'] })
-      queryClient.invalidateQueries({ queryKey: ['fluxo-obras', variables.obra_codigo, variables.ano] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-previstos'] })
+      queryClient.invalidateQueries({
+        queryKey: ['obra-logs', variables.grupoId, variables.obraCodigo],
+      })
     },
+  })
+}
+
+export function useObraLogs(grupoId: number | null, obraCodigo: string | null) {
+  return useQuery<PlanejamentoLogEntry[]>({
+    queryKey: ['obra-logs', grupoId, obraCodigo],
+    enabled: grupoId !== null && !!obraCodigo,
+    queryFn: () => api.get(`/fluxo-obras/grupo/${grupoId}/obra/${encodeURIComponent(obraCodigo!)}/logs`),
+    staleTime: 1000 * 30,
   })
 }
 
@@ -198,14 +223,14 @@ export function useGruposTotaisReais(ano: number) {
 
 export function useImportarPlanilhaObras() {
   const queryClient = useQueryClient()
-  return useMutation<BulkImportResult, Error, File>({
-    mutationFn: async (file) => {
+  return useMutation<BulkImportResult, Error, { file: File; grupoId: number }>({
+    mutationFn: async ({ file, grupoId }) => {
       const { useAuthStore } = await import('@/hooks/useAuth')
       const token = useAuthStore.getState().token
       const formData = new FormData()
       formData.append('file', file)
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || '/api'}/fluxo-obras/planejamento/importar`,
+        `${import.meta.env.VITE_API_URL || '/api'}/fluxo-obras/planejamento/importar?grupo_id=${grupoId}`,
         {
           method: 'POST',
           // Content-Type omitido intencionalmente — browser define o boundary do multipart

@@ -9,7 +9,9 @@ import {
   useFluxoRealCache,
   useGruposObras,
   useGruposTotaisReais,
-  useSavePlanejamento,
+  useGruposTotaisPrevistos,
+  useObraLogs,
+  useSaveObraPlanejamento,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
@@ -19,7 +21,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, Periodo, UpsertPlanejamentoIn } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -676,33 +678,193 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
 
 // ── Seção de uma obra ─────────────────────────────────────────────────────────
 
+// Distribui um total em n parcelas iguais; a última absorve o arredondamento.
+function distribuirIgual(total: number, n: number): number[] {
+  if (n <= 0) return []
+  const base = Math.round((total / n) * 100) / 100
+  const arr = Array<number>(n).fill(base)
+  arr[n - 1] = Math.round((total - base * (n - 1)) * 100) / 100
+  return arr
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100
+
+// ── Campo de valor global por obra ───────────────────────────────────────────
+interface GlobalFieldProps {
+  label: string
+  value: number
+  soma: number
+  onChange: (v: number) => void
+  onDistribuir: () => void
+  disabled?: boolean
+  readOnly?: boolean
+}
+
+function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, readOnly }: GlobalFieldProps) {
+  const [raw, setRaw] = useState(value ? String(value) : '')
+  useEffect(() => { setRaw(value ? String(value) : '') }, [value])
+  const diff = r2(soma - value)
+  const ok = Math.abs(diff) <= 0.01
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[220px]">
+      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={raw}
+          disabled={disabled || readOnly}
+          onChange={(e) => setRaw(e.target.value)}
+          onBlur={() => { const p = parseFloat(raw.replace(',', '.')); onChange(isNaN(p) ? 0 : p) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          placeholder="0,00"
+          className={cn(
+            'w-32 text-right tabular-nums text-sm font-bold border-2 px-2 py-1 outline-none',
+            readOnly ? 'bg-bgBase border-grid text-muted-foreground' : 'bg-white border-dark focus:border-brand',
+          )}
+        />
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onDistribuir}
+            disabled={disabled}
+            className="text-[10px] font-black uppercase tracking-widest border-2 border-dark px-2 py-1 bg-white hover:bg-brand hover:border-brand transition-colors disabled:opacity-40"
+            title="Distribuir igualmente entre os meses do período"
+          >
+            Distribuir
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] tabular-nums">
+        <span className="text-muted-foreground">Soma: <strong className="text-dark">{formatCurrency(soma)}</strong></span>
+        {readOnly ? null : ok ? (
+          <span className="font-black text-teal-600">✓ confere</span>
+        ) : (
+          <span className="font-black text-red-600">
+            {diff > 0 ? '▲' : '▼'} {diff > 0 ? '+' : ''}{formatCurrency(diff)} {diff > 0 ? 'a maior' : 'a menor'}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Célula de previsto editável com histórico no hover ───────────────────────
+function PrevistoCell({
+  value, onChange, disabled, history,
+}: {
+  value: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  history?: PlanejamentoLogEntry[]
+}) {
+  const hasHist = !!history && history.length > 0
+  return (
+    <div className="relative group">
+      <EditableCell value={value} onSave={onChange} disabled={disabled} />
+      {hasHist && (
+        <>
+          <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-amber-500 pointer-events-none" />
+          <div className="hidden group-hover:block absolute z-40 right-0 top-full mt-1 w-60 bg-dark text-white text-[11px] shadow-hard border-2 border-dark p-2 text-left normal-case tracking-normal font-normal">
+            <p className="font-black uppercase tracking-widest text-[10px] text-brand mb-1">Histórico</p>
+            {history!.slice(0, 6).map((h, i) => (
+              <div key={i} className="border-b border-white/15 last:border-0 py-0.5">
+                <span className="tabular-nums">
+                  {formatCurrency(h.valor_anterior)} → <strong>{formatCurrency(h.valor_novo)}</strong>
+                </span>
+                <div className="text-white/60">
+                  {formatDateTime(h.changed_at)}{h.changed_by_name ? ` · ${h.changed_by_name}` : ''}
+                </div>
+              </div>
+            ))}
+            {history!.length > 6 && (
+              <p className="text-white/50 mt-1">+{history!.length - 6} alteração(ões)…</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+type ObraRenderData = FluxoPlanejamentoResponse & { _isEspecial?: boolean; _recRealizadaPct?: number[] }
+
 interface ObraSectionProps {
-  data: FluxoPlanejamentoResponse
-  savePending: boolean
-  onSave: (payload: UpsertPlanejamentoIn) => void
+  grupoId: number
+  data: ObraRenderData
+  canEdit: boolean
   defaultCollapsed: boolean
   especial?: { recRealizadaPct: number[] }
 }
 
-function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: ObraSectionProps) {
+function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: ObraSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
-
   const meses: FluxoMesRow[] = data.meses
+  const n = meses.length
 
-  const totalCustoPrev = meses.reduce((s, m) => s + m.custo_previsto, 0)
-  const totalRecPrev = meses.reduce((s, m) => s + m.receita_prevista, 0)
-  const saldoPrev = totalRecPrev - totalCustoPrev
+  const save = useSaveObraPlanejamento()
+  const { data: logs } = useObraLogs(collapsed ? null : grupoId, collapsed ? null : data.obra_codigo)
+
+  // Rascunho local do previsto + valores globais
+  const [custoPrev, setCustoPrev] = useState<number[]>(() => meses.map((m) => m.custo_previsto))
+  const [receitaPrev, setReceitaPrev] = useState<number[]>(() => meses.map((m) => m.receita_prevista))
+  const [custoGlobal, setCustoGlobal] = useState<number>(data.custo_global)
+  const [receitaGlobal, setReceitaGlobal] = useState<number>(data.receita_global)
+
+  // Reinicializa quando os dados do servidor mudam (período, novo snapshot salvo, etc.)
+  const serverSig = useMemo(
+    () => JSON.stringify({
+      c: meses.map((m) => m.custo_previsto),
+      r: meses.map((m) => m.receita_prevista),
+      cg: data.custo_global, rg: data.receita_global,
+    }),
+    [meses, data.custo_global, data.receita_global],
+  )
+  useEffect(() => {
+    setCustoPrev(meses.map((m) => m.custo_previsto))
+    setReceitaPrev(meses.map((m) => m.receita_prevista))
+    setCustoGlobal(data.custo_global)
+    setReceitaGlobal(especial
+      ? r2(meses.reduce((s, m) => s + m.receita_prevista, 0))
+      : data.receita_global)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSig])
+
+  // Mapa de histórico por célula
+  const histMap = useMemo(() => {
+    const m: Record<string, PlanejamentoLogEntry[]> = {}
+    for (const e of logs ?? []) {
+      (m[`${e.ano}-${e.mes}-${e.campo}`] ??= []).push(e)
+    }
+    return m
+  }, [logs])
+
+  const somaCusto = r2(custoPrev.reduce((s, v) => s + v, 0))
+  const somaReceita = r2(receitaPrev.reduce((s, v) => s + v, 0))
+  const custoOk = Math.abs(r2(somaCusto - custoGlobal)) <= 0.01
+  const receitaOk = especial ? true : Math.abs(r2(somaReceita - receitaGlobal)) <= 0.01
+  const balanced = custoOk && receitaOk
+
+  const dirty = useMemo(() => {
+    if (r2(custoGlobal) !== r2(data.custo_global)) return true
+    if (!especial && r2(receitaGlobal) !== r2(data.receita_global)) return true
+    return meses.some((m, i) =>
+      r2(custoPrev[i]) !== r2(m.custo_previsto) ||
+      (!especial && r2(receitaPrev[i]) !== r2(m.receita_prevista)),
+    )
+  }, [custoPrev, receitaPrev, custoGlobal, receitaGlobal, meses, data, especial])
 
   const totalCustoReal = meses.reduce((s, m) => s + m.custo_real, 0)
-  const totalRecReal   = especial
+  const totalRecReal = especial
     ? especial.recRealizadaPct.reduce((s, v) => s + v, 0) + meses.reduce((s, m) => s + m.receita_realizada, 0)
     : meses.reduce((s, m) => s + m.receita_realizada, 0)
-  const saldoReal      = totalRecReal - totalCustoReal
+  const saldoReal = totalRecReal - totalCustoReal
 
   let accPlan = 0
   let accReal = 0
-  const acumuladoPlanejado = meses.map((m) => {
-    accPlan += m.receita_prevista - m.custo_previsto
+  const acumuladoPlanejado = meses.map((_, i) => {
+    accPlan += (especial ? meses[i].receita_prevista : receitaPrev[i]) - custoPrev[i]
     return accPlan
   })
   const recRealParaAcc = especial
@@ -713,24 +875,32 @@ function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: 
     return accReal
   })
 
-  function handleSave(idx: number, field: 'custo_previsto' | 'receita_prevista', value: number) {
-    const current = meses[idx]
-    onSave({
-      obra_codigo: data.obra_codigo,
-      ano: current.ano,
-      mes: current.mes,
-      custo_previsto: field === 'custo_previsto' ? value : current.custo_previsto,
-      receita_prevista: field === 'receita_prevista' ? value : current.receita_prevista,
-    })
+  function handleSalvar() {
+    // Obra especial: a receita é uma realocação ponderada das demais obras (não
+    // entra como receita própria), então é persistida como 0 para não duplicar nos totais.
+    const body: SaveObraPlanejamentoIn = {
+      custo_global: r2(custoGlobal),
+      receita_global: especial ? 0 : r2(receitaGlobal),
+      meses: meses.map((m, i) => ({
+        mes: m.mes,
+        ano: m.ano,
+        custo_previsto: r2(custoPrev[i]),
+        receita_prevista: especial ? 0 : r2(receitaPrev[i]),
+        custo_real: 0,
+        receita_realizada: 0,
+      })),
+    }
+    save.mutate({ grupoId, obraCodigo: data.obra_codigo, body })
   }
 
   type RowDef =
-    | { label: string; kind: 'editable'; field: 'custo_previsto' | 'receita_prevista'; values: number[] }
+    | { label: string; kind: 'custo' }
+    | { label: string; kind: 'receita' }
     | { label: string; kind: 'readonly' | 'accumulated'; values: number[] }
 
   const rowDefs: RowDef[] = especial
     ? [
-        { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
+        { label: 'Custo Previsto', kind: 'custo' },
         { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
         { label: 'Receita Prevista (%)', kind: 'readonly', values: meses.map((m) => m.receita_prevista) },
         { label: 'Receita Realizada (%)', kind: 'readonly', values: especial.recRealizadaPct },
@@ -739,9 +909,9 @@ function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: 
         { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
       ]
     : [
-        { label: 'Custo Previsto', kind: 'editable', field: 'custo_previsto', values: meses.map((m) => m.custo_previsto) },
+        { label: 'Custo Previsto', kind: 'custo' },
         { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
-        { label: 'Receita Prevista', kind: 'editable', field: 'receita_prevista', values: meses.map((m) => m.receita_prevista) },
+        { label: 'Receita Prevista', kind: 'receita' },
         { label: 'Receita Realizada', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
         { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
         { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
@@ -758,22 +928,15 @@ function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: 
 
   return (
     <div className="bg-white block-border shadow-hard">
-      <button
-        type="button"
-        className={headerCls}
-        onClick={() => setCollapsed((c) => !c)}
-      >
+      <button type="button" className={headerCls} onClick={() => setCollapsed((c) => !c)}>
         <div className="flex items-center gap-3">
-          {collapsed
-            ? <ChevronRight className="h-4 w-4 flex-shrink-0" />
-            : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
-          <span className="text-xs font-black uppercase tracking-widest text-left">
-            {data.obra_codigo}
-          </span>
+          {collapsed ? <ChevronRight className="h-4 w-4 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
+          <span className="text-xs font-black uppercase tracking-widest text-left">{data.obra_codigo}</span>
           {especial && (
-            <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">
-              Obra Especial
-            </span>
+            <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">Obra Especial</span>
+          )}
+          {!collapsed && dirty && (
+            <span className="text-[10px] font-black uppercase tracking-widest bg-amber-400 text-dark px-2 py-0.5">Não salvo</span>
           )}
         </div>
         <div className="flex items-center gap-6 text-xs tabular-nums">
@@ -783,63 +946,114 @@ function ObraSection({ data, savePending, onSave, defaultCollapsed, especial }: 
           <span className={cn('hidden sm:inline', headerTextCls)}>
             Rec. Realizada: <span className={headerValCls}>{formatCurrency(totalRecReal)}</span>
           </span>
-          <span className={saldoCls}>
-            Saldo: {formatCurrency(saldoReal)}
-          </span>
+          <span className={saldoCls}>Saldo: {formatCurrency(saldoReal)}</span>
         </div>
       </button>
 
       {!collapsed && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
-            <thead>
-              <tr className="bg-bgBase border-b-2 border-dark">
-                <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
-                  Métrica
-                </th>
-                {meses.map((m) => (
-                  <th key={`${m.ano}-${m.mes}`} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
-                    {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
+        <>
+          {/* Painel de valores globais + validação + salvar */}
+          <div className="border-b-2 border-grid bg-bgBase px-4 py-3 flex flex-wrap items-end gap-6">
+            <GlobalField
+              label="Custo Previsto (Global)"
+              value={custoGlobal}
+              soma={somaCusto}
+              onChange={setCustoGlobal}
+              onDistribuir={() => setCustoPrev(distribuirIgual(custoGlobal, n))}
+              disabled={!canEdit || save.isPending}
+            />
+            <GlobalField
+              label={especial ? 'Receita Prevista (calculada)' : 'Receita Prevista (Global)'}
+              value={receitaGlobal}
+              soma={somaReceita}
+              onChange={setReceitaGlobal}
+              onDistribuir={() => setReceitaPrev(distribuirIgual(receitaGlobal, n))}
+              disabled={!canEdit || save.isPending}
+              readOnly={!!especial}
+            />
+            <div className="flex flex-col gap-1 ml-auto">
+              <button
+                type="button"
+                onClick={handleSalvar}
+                disabled={!canEdit || !balanced || !dirty || save.isPending}
+                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-5 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-40 disabled:hover:bg-dark disabled:hover:text-white"
+                title={!balanced ? 'A soma dos meses deve ser igual ao valor global' : undefined}
+              >
+                {save.isPending ? 'Salvando…' : 'Salvar'}
+              </button>
+              {!canEdit ? (
+                <span className="text-[11px] text-muted-foreground italic">Somente leitura</span>
+              ) : !balanced ? (
+                <span className="text-[11px] font-bold text-red-600">Ajuste os meses para fechar o global</span>
+              ) : save.isError ? (
+                <span className="text-[11px] font-bold text-red-600">{save.error?.message}</span>
+              ) : dirty ? (
+                <span className="text-[11px] text-muted-foreground">Alterações pendentes</span>
+              ) : (
+                <span className="text-[11px] text-teal-600 font-bold">✓ Tudo salvo</span>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
+              <thead>
+                <tr className="bg-bgBase border-b-2 border-dark">
+                  <th className="text-left font-black uppercase tracking-widest px-4 py-2 sticky left-0 bg-bgBase z-10 w-52 border-r-2 border-grid">
+                    Métrica
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rowDefs.map((row) => {
-                const isAccumulated = row.kind === 'accumulated'
-                const rowBg = isAccumulated ? 'bg-bgBase' : 'bg-white'
-                return (
-                  <tr
-                    key={row.label}
-                    className={cn('border-b border-grid hover:bg-brand/5 transition-colors', rowBg)}
-                  >
-                    <td
-                      className={cn(
+                  {meses.map((m) => (
+                    <th key={`${m.ano}-${m.mes}`} className="text-right font-black uppercase tracking-widest px-2 py-2 w-20">
+                      {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rowDefs.map((row) => {
+                  const isAccumulated = row.kind === 'accumulated'
+                  const editable = row.kind === 'custo' || row.kind === 'receita'
+                  const rowBg = isAccumulated ? 'bg-bgBase' : 'bg-white'
+                  let values: number[]
+                  if (row.kind === 'custo') values = custoPrev
+                  else if (row.kind === 'receita') values = receitaPrev
+                  else values = row.values
+                  const campo = row.kind === 'custo' ? 'custo_previsto' : 'receita_prevista'
+                  return (
+                    <tr key={row.label} className={cn('border-b border-grid hover:bg-brand/5 transition-colors', rowBg)}>
+                      <td className={cn(
                         'px-4 py-1.5 font-bold uppercase tracking-wide text-xs sticky left-0 z-10 border-r-2 border-grid',
                         isAccumulated ? 'bg-bgBase font-black' : rowBg,
-                      )}
-                    >
-                      {row.label}
-                    </td>
-                    {row.values.map((val, mesIdx) => (
-                      <td key={mesIdx} className="px-1 py-1">
-                        {row.kind === 'editable' ? (
-                          <EditableCell
-                            value={val}
-                            disabled={savePending}
-                            onSave={(v) => handleSave(mesIdx, (row as { field: 'custo_previsto' | 'receita_prevista' }).field, v)}
-                          />
-                        ) : (
-                          <ValueCell value={val} bold={isAccumulated} />
-                        )}
+                      )}>
+                        {row.label}
                       </td>
-                    ))}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {values.map((val, mesIdx) => (
+                        <td key={mesIdx} className="px-1 py-1">
+                          {editable ? (
+                            <PrevistoCell
+                              value={val}
+                              disabled={!canEdit || save.isPending}
+                              history={histMap[`${meses[mesIdx].ano}-${meses[mesIdx].mes}-${campo}`]}
+                              onChange={(v) => {
+                                if (row.kind === 'custo') {
+                                  setCustoPrev((prev) => prev.map((x, i) => (i === mesIdx ? v : x)))
+                                } else {
+                                  setReceitaPrev((prev) => prev.map((x, i) => (i === mesIdx ? v : x)))
+                                }
+                              }}
+                            />
+                          ) : (
+                            <ValueCell value={val} bold={isAccumulated} />
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
@@ -1167,12 +1381,13 @@ export default function FluxoObras() {
   const lastRestoredMetaRef = useRef<string | null>(null)
 
   const { data: tree } = useFilterTree()
-  const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(periodo)
+  const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(grupoAtivoId, periodo)
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
   const { data: totaisReaisMap } = useGruposTotaisReais(periodo.anoInicio)
+  const { data: totaisPrevMap } = useGruposTotaisPrevistos(periodo)
   const fluxoRealCache = useFluxoRealCache(grupoAtivoId, periodo)
   const atualizarFluxoReal = useAtualizarFluxoReal()
-  const savePlanejamento = useSavePlanejamento()
+  const saveObraPlanejamento = useSaveObraPlanejamento()
   const deleteGrupo = useDeleteGrupo()
 
   const dadosReais = fluxoRealCache.data?.data ?? null
@@ -1199,12 +1414,9 @@ export default function FluxoObras() {
 
 
   function calcTotaisGrupo(grupo: GrupoObras) {
-    if (!todasObras) return null
-    const set = new Set(grupo.obras)
-    const obras = todasObras.filter((o) => set.has(o.obra_codigo))
-    const custoPrev = obras.reduce((s, o) => s + o.meses.reduce((ms, m) => ms + m.custo_previsto, 0), 0)
-    const recPrev = obras.reduce((s, o) => s + o.meses.reduce((ms, m) => ms + m.receita_prevista, 0), 0)
-    return { custoPrev, recPrev, saldo: recPrev - custoPrev }
+    const t = totaisPrevMap?.[String(grupo.id)]
+    if (!t) return null
+    return { custoPrev: t.custo_prev, recPrev: t.receita_prev, saldo: t.receita_prev - t.custo_prev }
   }
 
   const obrasDoGrupo = useMemo(() => {
@@ -1307,6 +1519,8 @@ export default function FluxoObras() {
       sintetica: {
         obra_codigo: '__DEMAIS_OBRAS__',
         ano: periodo.anoInicio,
+        custo_global: 0,
+        receita_global: 0,
         meses,
         _greedyCount: greedyObras.length,
         _greedyEmpresas: grupoAtivo.empresas_greedy,
@@ -1596,15 +1810,15 @@ export default function FluxoObras() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              {obrasDoGrupo.length} obra(s) · Clique no cabeçalho de cada obra para expandir/colapsar ·
-              Clique nas células de <strong>Custo Previsto</strong> ou <strong>Receita Prevista</strong> para editar
+              {obrasDoGrupo.length} obra(s) · Informe o <strong>valor global</strong> de custo e receita de cada obra e
+              distribua nos meses · a soma precisa fechar com o global para salvar
             </p>
-            {obrasParaRender.map((obra) => (
+            {grupoAtivoId !== null && obrasParaRender.map((obra) => (
               <ObraSection
                 key={obra.obra_codigo}
+                grupoId={grupoAtivoId}
                 data={obra}
-                savePending={savePlanejamento.isPending}
-                onSave={(payload) => savePlanejamento.mutate(payload)}
+                canEdit={grupoAtivo?.can_edit === true}
                 defaultCollapsed={obrasDoGrupo.length > 5}
                 especial={obra._isEspecial && obra._recRealizadaPct
                   ? { recRealizadaPct: obra._recRealizadaPct }
@@ -1619,14 +1833,10 @@ export default function FluxoObras() {
               />
             )}
 
-            <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} />
+            {obrasParaRender.length + (obrasGreedy ? 1 : 0) > 1 && (
+              <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} />
+            )}
           </div>
-        )}
-
-        {savePlanejamento.isError && (
-          <p className="mt-3 text-xs font-bold text-red-600">
-            Erro ao salvar: {savePlanejamento.error?.message}
-          </p>
         )}
 
         {modal}

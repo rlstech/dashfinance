@@ -77,6 +77,8 @@ class FluxoPlanejamentoResponse(BaseModel):
     obra_codigo: str
     ano: int
     meses: list[FluxoMesRow]
+    custo_global: float = 0.0
+    receita_global: float = 0.0
 
 
 class UpsertPlanejamentoIn(BaseModel):
@@ -85,6 +87,27 @@ class UpsertPlanejamentoIn(BaseModel):
     mes: int
     custo_previsto: float = 0.0
     receita_prevista: float = 0.0
+
+
+class SaveObraPlanejamentoIn(BaseModel):
+    custo_global: float = 0.0
+    receita_global: float = 0.0
+    meses: list[FluxoMesRow] = []
+
+
+class PlanejamentoLogEntry(BaseModel):
+    ano: int
+    mes: int
+    campo: str
+    valor_anterior: float = 0.0
+    valor_novo: float = 0.0
+    changed_at: datetime
+    changed_by_name: str | None = None
+
+
+class GrupoTotaisPrevistos(BaseModel):
+    custo_prev: float = 0.0
+    receita_prev: float = 0.0
 
 
 class BulkImportResult(BaseModel):

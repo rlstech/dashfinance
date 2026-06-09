@@ -116,6 +116,33 @@ CREATE TABLE IF NOT EXISTS fluxo_real_cache_meta (
 
 CREATE INDEX IF NOT EXISTS fluxo_real_cache_obra_idx
     ON fluxo_real_cache (grupo_id, ano, obra_codigo);
+
+-- Valor global de custo/receita previsto por grupo+obra (meta de distribuição)
+CREATE TABLE IF NOT EXISTS fluxo_obra_global (
+    grupo_id        INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    obra_codigo     VARCHAR(200) NOT NULL,
+    custo_global    NUMERIC(15,2) NOT NULL DEFAULT 0,
+    receita_global  NUMERIC(15,2) NOT NULL DEFAULT 0,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by      INTEGER REFERENCES users(id),
+    PRIMARY KEY (grupo_id, obra_codigo)
+);
+
+-- Auditoria de alterações de previsto (quem mudou o quê e quando)
+CREATE TABLE IF NOT EXISTS fluxo_planejamento_log (
+    id              SERIAL PRIMARY KEY,
+    grupo_id        INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    obra_codigo     VARCHAR(200) NOT NULL,
+    ano             INTEGER NOT NULL,
+    mes             INTEGER NOT NULL,
+    campo           TEXT NOT NULL,            -- 'custo_previsto' | 'receita_prevista'
+    valor_anterior  NUMERIC(15,2) NOT NULL DEFAULT 0,
+    valor_novo      NUMERIC(15,2) NOT NULL DEFAULT 0,
+    changed_by      INTEGER REFERENCES users(id),
+    changed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS fluxo_plan_log_idx
+    ON fluxo_planejamento_log (grupo_id, obra_codigo, ano, mes);
 """
 
 
@@ -144,7 +171,50 @@ async def close_pool():
 async def init_tables():
     async with _pool.acquire() as conn:
         await conn.execute(_SCHEMA)
+        await _migrate_planejamento_per_grupo(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
+
+
+async def _migrate_planejamento_per_grupo(conn):
+    """One-time: escopa fluxo_planejamento por grupo.
+
+    Antes o previsto era global por (obra, ano, mes) e compartilhado entre todos
+    os grupos. Esta migração adiciona grupo_id, copia os valores globais atuais
+    para cada grupo que contém a obra (preserva os grupos existentes) e remove as
+    linhas globais. Roda apenas uma vez, detectada pela ausência da coluna grupo_id.
+    """
+    col = await conn.fetchval(
+        """SELECT 1 FROM information_schema.columns
+           WHERE table_name='fluxo_planejamento' AND column_name='grupo_id'"""
+    )
+    if col:
+        return  # já migrado
+
+    async with conn.transaction():
+        await conn.execute(
+            "ALTER TABLE fluxo_planejamento "
+            "ADD COLUMN grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE"
+        )
+        await conn.execute(
+            "ALTER TABLE fluxo_planejamento "
+            "DROP CONSTRAINT IF EXISTS fluxo_planejamento_obra_codigo_ano_mes_key"
+        )
+        # Copia o previsto global atual para cada grupo que contém a obra.
+        await conn.execute(
+            """INSERT INTO fluxo_planejamento
+                   (grupo_id, obra_codigo, ano, mes, custo_previsto, receita_prevista)
+               SELECT gi.grupo_id, fp.obra_codigo, fp.ano, fp.mes,
+                      fp.custo_previsto, fp.receita_prevista
+               FROM fluxo_planejamento fp
+               JOIN grupo_obra_items gi ON gi.obra_codigo = fp.obra_codigo
+               WHERE fp.grupo_id IS NULL"""
+        )
+        await conn.execute("DELETE FROM fluxo_planejamento WHERE grupo_id IS NULL")
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS fluxo_planejamento_grupo_obra_ano_mes_key "
+            "ON fluxo_planejamento (grupo_id, obra_codigo, ano, mes)"
+        )
+    log.info("Migração fluxo_planejamento → por grupo concluída")
 
 
 def _pool_conn():
@@ -298,15 +368,15 @@ async def upsert_planejamento(
         )
 
 
-async def get_planejamento_bulk(obras: list[str], ano: int) -> dict[str, list[dict]]:
-    """Retorna {obra_codigo: [12 dicts]} para todas as obras em uma única query."""
+async def get_planejamento_bulk(obras: list[str], ano: int, grupo_id: int) -> dict[str, list[dict]]:
+    """Retorna {obra_codigo: [12 dicts]} do previsto do grupo, em uma única query."""
     if not obras:
         return {}
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT obra_codigo, mes, custo_previsto, receita_prevista "
-            "FROM fluxo_planejamento WHERE obra_codigo = ANY($1) AND ano = $2",
-            obras, ano,
+            "FROM fluxo_planejamento WHERE grupo_id = $3 AND obra_codigo = ANY($1) AND ano = $2",
+            obras, ano, grupo_id,
         )
     by_obra: dict[str, dict[int, dict]] = {}
     for r in rows:
@@ -537,25 +607,163 @@ async def _set_grupo_empresas_greedy(conn, grupo_id: int, empresas: list[str]):
         )
 
 
-async def bulk_upsert_planejamento(items: list[dict]) -> int:
+async def bulk_upsert_planejamento(grupo_id: int, items: list[dict]) -> int:
     if not items:
         return 0
     async with _pool.acquire() as conn:
         await conn.executemany(
             """
             INSERT INTO fluxo_planejamento
-                (obra_codigo, ano, mes, custo_previsto, receita_prevista, updated_at)
-            VALUES ($1,$2,$3,$4,$5,NOW())
-            ON CONFLICT (obra_codigo, ano, mes) DO UPDATE
-                SET custo_previsto=$4, receita_prevista=$5, updated_at=NOW()
+                (grupo_id, obra_codigo, ano, mes, custo_previsto, receita_prevista, updated_at)
+            VALUES ($1,$2,$3,$4,$5,$6,NOW())
+            ON CONFLICT (grupo_id, obra_codigo, ano, mes) DO UPDATE
+                SET custo_previsto=$5, receita_prevista=$6, updated_at=NOW()
             """,
             [
-                (r["obra_codigo"], r["ano"], r["mes"],
+                (grupo_id, r["obra_codigo"], r["ano"], r["mes"],
                  r["custo_previsto"], r["receita_prevista"])
                 for r in items
             ],
         )
     return len(items)
+
+
+async def get_obra_global(grupo_id: int, obras: list[str]) -> dict[str, dict]:
+    """Retorna {obra_codigo: {custo_global, receita_global}} do grupo."""
+    if not obras:
+        return {}
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT obra_codigo, custo_global, receita_global "
+            "FROM fluxo_obra_global WHERE grupo_id=$1 AND obra_codigo = ANY($2)",
+            grupo_id, obras,
+        )
+    return {
+        r["obra_codigo"]: {
+            "custo_global": float(r["custo_global"]),
+            "receita_global": float(r["receita_global"]),
+        }
+        for r in rows
+    }
+
+
+async def save_obra_planejamento(
+    grupo_id: int, obra_codigo: str, user_id: int,
+    custo_global: float, receita_global: float,
+    meses: list[dict],
+) -> None:
+    """Grava o previsto de uma obra (lote) + valor global, registrando o log das
+    células que mudaram. `meses` = [{ano, mes, custo_previsto, receita_prevista}].
+    """
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            # Estado atual para comparar e logar somente o que mudou
+            atuais = await conn.fetch(
+                "SELECT ano, mes, custo_previsto, receita_prevista "
+                "FROM fluxo_planejamento WHERE grupo_id=$1 AND obra_codigo=$2",
+                grupo_id, obra_codigo,
+            )
+            antes: dict[tuple[int, int], dict] = {
+                (r["ano"], r["mes"]): {
+                    "custo_previsto": float(r["custo_previsto"]),
+                    "receita_prevista": float(r["receita_prevista"]),
+                }
+                for r in atuais
+            }
+
+            logs: list[tuple] = []
+            for m in meses:
+                key = (m["ano"], m["mes"])
+                prev = antes.get(key, {"custo_previsto": 0.0, "receita_prevista": 0.0})
+                for campo in ("custo_previsto", "receita_prevista"):
+                    novo = float(m.get(campo, 0) or 0)
+                    if abs(novo - prev[campo]) > 0.001:
+                        logs.append((
+                            grupo_id, obra_codigo, m["ano"], m["mes"],
+                            campo, prev[campo], novo, user_id,
+                        ))
+
+            await conn.executemany(
+                """
+                INSERT INTO fluxo_planejamento
+                    (grupo_id, obra_codigo, ano, mes, custo_previsto, receita_prevista, updated_at)
+                VALUES ($1,$2,$3,$4,$5,$6,NOW())
+                ON CONFLICT (grupo_id, obra_codigo, ano, mes) DO UPDATE
+                    SET custo_previsto=$5, receita_prevista=$6, updated_at=NOW()
+                """,
+                [
+                    (grupo_id, obra_codigo, m["ano"], m["mes"],
+                     float(m.get("custo_previsto", 0) or 0),
+                     float(m.get("receita_prevista", 0) or 0))
+                    for m in meses
+                ],
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO fluxo_obra_global
+                    (grupo_id, obra_codigo, custo_global, receita_global, updated_by, updated_at)
+                VALUES ($1,$2,$3,$4,$5,NOW())
+                ON CONFLICT (grupo_id, obra_codigo) DO UPDATE
+                    SET custo_global=$3, receita_global=$4, updated_by=$5, updated_at=NOW()
+                """,
+                grupo_id, obra_codigo, custo_global, receita_global, user_id,
+            )
+
+            if logs:
+                await conn.executemany(
+                    """INSERT INTO fluxo_planejamento_log
+                          (grupo_id, obra_codigo, ano, mes, campo,
+                           valor_anterior, valor_novo, changed_by)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+                    logs,
+                )
+
+
+async def get_obra_logs(grupo_id: int, obra_codigo: str) -> list[dict]:
+    """Histórico de alterações de previsto de uma obra (mais recentes primeiro)."""
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT l.ano, l.mes, l.campo, l.valor_anterior, l.valor_novo,
+                      l.changed_at, u.name AS changed_by_name
+               FROM fluxo_planejamento_log l
+               LEFT JOIN users u ON u.id = l.changed_by
+               WHERE l.grupo_id=$1 AND l.obra_codigo=$2
+               ORDER BY l.changed_at DESC""",
+            grupo_id, obra_codigo,
+        )
+    return [
+        {
+            "ano": r["ano"], "mes": r["mes"], "campo": r["campo"],
+            "valor_anterior": float(r["valor_anterior"]),
+            "valor_novo": float(r["valor_novo"]),
+            "changed_at": r["changed_at"],
+            "changed_by_name": r["changed_by_name"],
+        }
+        for r in rows
+    ]
+
+
+async def get_grupos_planejamento_totais(
+    grupo_ids: list[int], slots: list[tuple[int, int]],
+) -> dict[int, dict]:
+    """Retorna {grupo_id: {custo_prev, receita_prev}} somado sobre os meses do período."""
+    if not grupo_ids or not slots:
+        return {}
+    anos = list({s[0] for s in slots})
+    slotset = set(slots)
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT grupo_id, ano, mes, custo_previsto, receita_prevista "
+            "FROM fluxo_planejamento WHERE grupo_id = ANY($1) AND ano = ANY($2)",
+            grupo_ids, anos,
+        )
+    out: dict[int, dict] = {gid: {"custo_prev": 0.0, "receita_prev": 0.0} for gid in grupo_ids}
+    for r in rows:
+        if (r["ano"], r["mes"]) in slotset:
+            out[r["grupo_id"]]["custo_prev"] += float(r["custo_previsto"])
+            out[r["grupo_id"]]["receita_prev"] += float(r["receita_prevista"])
+    return out
 
 
 # ── Cache de Dados Reais por Grupo ───────────────────────────────────────────

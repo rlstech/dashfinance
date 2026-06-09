@@ -16,8 +16,10 @@ from app.models.schemas import (
     FluxoRealCacheMeta,
     FluxoRealMes,
     FluxoRealResponse,
+    GrupoTotaisPrevistos,
     GrupoTotaisReais,
-    UpsertPlanejamentoIn,
+    PlanejamentoLogEntry,
+    SaveObraPlanejamentoIn,
 )
 from app.services import pg
 from app.services.cache import get_cached
@@ -55,14 +57,18 @@ def _resolve_periodo(
 
 @router.get("/todas", response_model=list[FluxoPlanejamentoResponse])
 async def get_todas(
+    grupo_id: int,
     ano: int | None = None,
     ano_inicio: int | None = None,
     mes_inicio: int = 1,
     ano_fim: int | None = None,
     mes_fim: int = 12,
-    _: UserOut = Depends(get_current_user),
+    user: UserOut = Depends(get_current_user),
 ):
-    """Retorna planejamento de todas as obras para o período dado."""
+    """Retorna o planejamento das obras para o período, escopado ao grupo."""
+    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
+
     yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
     slots = _periodo_slots(yi, mi, yf, mf)
     anos = list(dict.fromkeys(s[0] for s in slots))
@@ -81,13 +87,17 @@ async def get_todas(
     # Fetch each year in one DB call, build lookup {yr: {obra: {mes: row}}}
     plano: dict[int, dict[str, dict[int, dict]]] = {}
     for yr in anos:
-        bulk = await pg.get_planejamento_bulk(obras, yr)
+        bulk = await pg.get_planejamento_bulk(obras, yr, grupo_id)
         plano[yr] = {ob: {r["mes"]: r for r in rows} for ob, rows in bulk.items()}
+
+    globais = await pg.get_obra_global(grupo_id, obras)
 
     return [
         FluxoPlanejamentoResponse(
             obra_codigo=obra,
             ano=yi,
+            custo_global=globais.get(obra, {}).get("custo_global", 0.0),
+            receita_global=globais.get(obra, {}).get("receita_global", 0.0),
             meses=[
                 FluxoMesRow(
                     mes=mes,
@@ -102,6 +112,27 @@ async def get_todas(
         )
         for obra in obras
     ]
+
+
+@router.get("/grupos-totais-previstos", response_model=dict[int, GrupoTotaisPrevistos])
+async def get_grupos_totais_previstos(
+    ano: int | None = None,
+    ano_inicio: int | None = None,
+    mes_inicio: int = 1,
+    ano_fim: int | None = None,
+    mes_fim: int = 12,
+    user: UserOut = Depends(get_current_user),
+):
+    """Totais de custo/receita previstos por grupo visível, para a galeria de cards."""
+    yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
+    slots = _periodo_slots(yi, mi, yf, mf)
+    grupos = await pg.get_grupos(user.id, user.is_admin)
+    grupo_ids = [g["id"] for g in grupos]
+    totais = await pg.get_grupos_planejamento_totais(grupo_ids, slots)
+    return {
+        gid: GrupoTotaisPrevistos(custo_prev=t["custo_prev"], receita_prev=t["receita_prev"])
+        for gid, t in totais.items()
+    }
 
 
 @router.get("/planejamento", response_model=FluxoPlanejamentoResponse)
@@ -384,28 +415,79 @@ async def get_grupos_totais_reais(
     }
 
 
-@router.post("/planejamento", status_code=204)
-async def upsert_planejamento(
-    body: UpsertPlanejamentoIn,
-    _: UserOut = Depends(get_current_user),
+@router.post("/grupo/{grupo_id}/obra/{obra_codigo}/planejamento", status_code=204)
+async def save_obra_planejamento(
+    grupo_id: int,
+    obra_codigo: str,
+    body: SaveObraPlanejamentoIn,
+    user: UserOut = Depends(get_current_user),
 ):
-    if not 1 <= body.mes <= 12:
-        raise HTTPException(status_code=400, detail="mes deve ser 1–12")
-    await pg.upsert_planejamento(
-        body.obra_codigo, body.ano, body.mes,
-        body.custo_previsto, body.receita_prevista,
+    """Salva o previsto de uma obra (todos os meses + valor global).
+
+    Valida que a soma dos meses bate com o valor global (custo e receita);
+    caso contrário retorna 422 com a divergência.
+    """
+    if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem permissão de edição neste grupo")
+
+    soma_custo = round(sum(m.custo_previsto for m in body.meses), 2)
+    soma_receita = round(sum(m.receita_prevista for m in body.meses), 2)
+    custo_global = round(body.custo_global, 2)
+    receita_global = round(body.receita_global, 2)
+
+    erros: list[dict] = []
+    if abs(soma_custo - custo_global) > 0.01:
+        erros.append({
+            "campo": "custo_previsto",
+            "global": custo_global, "soma": soma_custo,
+            "divergencia": round(soma_custo - custo_global, 2),
+        })
+    if abs(soma_receita - receita_global) > 0.01:
+        erros.append({
+            "campo": "receita_prevista",
+            "global": receita_global, "soma": soma_receita,
+            "divergencia": round(soma_receita - receita_global, 2),
+        })
+    if erros:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Soma dos meses diferente do valor global", "erros": erros},
+        )
+
+    await pg.save_obra_planejamento(
+        grupo_id, obra_codigo, user.id,
+        custo_global, receita_global,
+        [m.model_dump() for m in body.meses],
     )
+
+
+@router.get(
+    "/grupo/{grupo_id}/obra/{obra_codigo}/logs",
+    response_model=list[PlanejamentoLogEntry],
+)
+async def get_obra_logs(
+    grupo_id: int,
+    obra_codigo: str,
+    user: UserOut = Depends(get_current_user),
+):
+    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
+    rows = await pg.get_obra_logs(grupo_id, obra_codigo)
+    return [PlanejamentoLogEntry(**r) for r in rows]
 
 
 @router.post("/planejamento/importar", response_model=BulkImportResult)
 async def importar_planilha(
+    grupo_id: int,
     file: UploadFile = File(...),
-    _: UserOut = Depends(get_current_user),
+    user: UserOut = Depends(get_current_user),
 ):
     """
     Importa .xlsx com colunas: obra_codigo | ano | mes | custo_previsto | receita_prevista
-    Primeira linha = cabeçalho; linhas seguintes = dados.
+    Primeira linha = cabeçalho; linhas seguintes = dados. Escopado ao grupo informado.
     """
+    if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem permissão de edição neste grupo")
     if not (file.filename or "").endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Apenas arquivos .xlsx são aceitos")
 
@@ -436,5 +518,5 @@ async def importar_planilha(
         except Exception as e:
             errors.append(f"Linha {i}: {e}")
 
-    count = await pg.bulk_upsert_planejamento(items)
+    count = await pg.bulk_upsert_planejamento(grupo_id, items)
     return BulkImportResult(imported=count, errors=errors)
