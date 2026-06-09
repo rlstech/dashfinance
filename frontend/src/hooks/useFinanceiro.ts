@@ -177,6 +177,25 @@ export function useDeleteGrupo() {
   })
 }
 
+interface SavePeriodoArgs {
+  grupoId: number
+  periodo: Periodo
+}
+
+export function useSavePeriodoGrupo() {
+  const queryClient = useQueryClient()
+  return useMutation<null, Error, SavePeriodoArgs>({
+    mutationFn: ({ grupoId, periodo }) =>
+      api.put(`/grupos-obras/${grupoId}/periodo`, {
+        ano_inicio: periodo.anoInicio,
+        mes_inicio: periodo.mesInicio,
+        ano_fim: periodo.anoFim,
+        mes_fim: periodo.mesFim,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
+  })
+}
+
 export function useFluxoRealCache(grupoId: number | null, periodo: Periodo) {
   return useQuery<FluxoRealCachedResponse>({
     queryKey: ['fluxo-real-cache', grupoId, periodo],

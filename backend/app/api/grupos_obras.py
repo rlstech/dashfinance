@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.deps.auth import get_current_user
-from app.models.auth import GrupoObrasIn, GrupoObrasOut, UserBasic, UserOut
+from app.models.auth import GrupoObrasIn, GrupoObrasOut, PeriodoPadrao, UserBasic, UserOut
 from app.services import pg
 from app.services.cache import get_cached
 
@@ -71,6 +71,15 @@ async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depend
         "is_owner": user.is_admin or result.get("created_by") == user.id,
         "can_edit": True,  # quem chega aqui já passou no gate
     }
+
+
+@router.put("/{grupo_id}/periodo", status_code=204)
+async def save_periodo(grupo_id: int, body: PeriodoPadrao, user: UserOut = Depends(get_current_user)):
+    if not await pg.grupo_exists(grupo_id):
+        raise HTTPException(status_code=404, detail="Grupo não encontrado")
+    if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem permissão para editar este grupo")
+    await pg.save_periodo_grupo(grupo_id, body.ano_inicio, body.mes_inicio, body.ano_fim, body.mes_fim)
 
 
 @router.delete("/{grupo_id}", status_code=204)

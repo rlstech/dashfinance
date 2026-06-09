@@ -70,6 +70,13 @@ class GrupoObrasIn(BaseModel):
     empresas_greedy: list[str] = []
 
 
+class PeriodoPadrao(BaseModel):
+    ano_inicio: int
+    mes_inicio: int
+    ano_fim: int
+    mes_fim: int
+
+
 class GrupoObrasOut(BaseModel):
     id: int
     nome: str
@@ -82,6 +89,7 @@ class GrupoObrasOut(BaseModel):
     can_edit: bool = False
     shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
+    periodo_padrao: PeriodoPadrao | None = None
 
 
 class UserBasic(BaseModel):

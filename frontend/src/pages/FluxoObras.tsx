@@ -12,6 +12,7 @@ import {
   useGruposTotaisPrevistos,
   useObraLogs,
   useSaveObraPlanejamento,
+  useSavePeriodoGrupo,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
@@ -594,19 +595,15 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
         <p className="text-xs text-muted-foreground mb-3">{grupo.obras.length} obra(s)</p>
         {totais !== null ? (
           <div className="space-y-1.5">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5 text-xs items-baseline">
               <span></span>
-              <span className="text-right">Prev.</span>
-              <span className="text-right">Real</span>
-            </div>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-xs items-baseline">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Prev.</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Real</span>
               <span className="text-muted-foreground">Custo</span>
               <span className="font-bold tabular-nums text-right">{formatCurrency(totais.custoPrev)}</span>
               <span className="font-bold tabular-nums text-right text-dark/70">
                 {totaisReais ? formatCurrency(totaisReais.custo_real) : '—'}
               </span>
-            </div>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-3 text-xs items-baseline">
               <span className="text-muted-foreground">Receita</span>
               <span className="font-bold tabular-nums text-right">{formatCurrency(totais.recPrev)}</span>
               <span className="font-bold tabular-nums text-right text-dark/70">
@@ -1442,29 +1439,13 @@ export default function FluxoObras() {
   })
   const [view, setView] = useState<'grupos' | 'obras'>('grupos')
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
-
-  // Carrega o período salvo ao abrir um grupo
-  useEffect(() => {
-    if (grupoAtivoId === null) return
-    const saved = localStorage.getItem(`fluxo-periodo-${grupoAtivoId}`)
-    if (saved) {
-      try { setPeriodo(JSON.parse(saved)) } catch {}
-    } else {
-      setPeriodo({ anoInicio: currentYear, mesInicio: 1, anoFim: currentYear, mesFim: 12 })
-    }
-  }, [grupoAtivoId])
-
-  // Salva o período sempre que for alterado com um grupo ativo
-  useEffect(() => {
-    if (grupoAtivoId === null) return
-    localStorage.setItem(`fluxo-periodo-${grupoAtivoId}`, JSON.stringify(periodo))
-  }, [periodo, grupoAtivoId])
   // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
   const [modalState, setModalState] = useState<'novo' | GrupoObras | null>(null)
   // filtros para dados reais
   const [origensAP, setOrigensAP] = useState<string[]>(['Pago'])
   const [statusRec, setStatusRec] = useState<string[]>(['Recebida'])
   const lastRestoredMetaRef = useRef<string | null>(null)
+  const periodoFromGroupRef = useRef(false)
 
   const { data: tree } = useFilterTree()
   const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(grupoAtivoId, periodo)
@@ -1474,6 +1455,7 @@ export default function FluxoObras() {
   const fluxoRealCache = useFluxoRealCache(grupoAtivoId, periodo)
   const atualizarFluxoReal = useAtualizarFluxoReal()
   const saveObraPlanejamento = useSaveObraPlanejamento()
+  const savePeriodo = useSavePeriodoGrupo()
   const deleteGrupo = useDeleteGrupo()
 
   const dadosReais = fluxoRealCache.data?.data ?? null
@@ -1491,6 +1473,30 @@ export default function FluxoObras() {
     setOrigensAP(meta.origens)
     setStatusRec(meta.status_rec)
   }, [meta])
+
+  // Ao abrir um grupo, carrega o período salvo no banco (comum a todos os usuários)
+  useEffect(() => {
+    if (grupoAtivoId === null) return
+    periodoFromGroupRef.current = true
+    const grupo = grupos.find((g) => g.id === grupoAtivoId)
+    const p = grupo?.periodo_padrao
+    if (p) {
+      setPeriodo({ anoInicio: p.ano_inicio, mesInicio: p.mes_inicio, anoFim: p.ano_fim, mesFim: p.mes_fim })
+    } else {
+      setPeriodo({ anoInicio: currentYear, mesInicio: 1, anoFim: currentYear, mesFim: 12 })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grupoAtivoId])
+
+  // Ao alterar o período (pelo usuário, não por carregamento), persiste no banco
+  useEffect(() => {
+    if (grupoAtivoId === null) return
+    if (periodoFromGroupRef.current) { periodoFromGroupRef.current = false; return }
+    const grupo = grupos.find((g) => g.id === grupoAtivoId)
+    if (!grupo?.can_edit) return
+    savePeriodo.mutate({ grupoId: grupoAtivoId, periodo })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo])
 
   // grupoAtivo sempre reflete o estado mais recente do servidor
   const grupoAtivo = useMemo(

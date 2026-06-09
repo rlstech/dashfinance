@@ -172,6 +172,7 @@ async def init_tables():
     async with _pool.acquire() as conn:
         await conn.execute(_SCHEMA)
         await _migrate_planejamento_per_grupo(conn)
+        await _migrate_grupos_periodo_padrao(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
 
 
@@ -215,6 +216,24 @@ async def _migrate_planejamento_per_grupo(conn):
             "ON fluxo_planejamento (grupo_id, obra_codigo, ano, mes)"
         )
     log.info("Migração fluxo_planejamento → por grupo concluída")
+
+
+async def _migrate_grupos_periodo_padrao(conn):
+    """One-time: adiciona colunas de período padrão em grupos_obras."""
+    col = await conn.fetchval(
+        """SELECT 1 FROM information_schema.columns
+           WHERE table_name='grupos_obras' AND column_name='periodo_ano_inicio'"""
+    )
+    if col:
+        return
+    await conn.execute(
+        """ALTER TABLE grupos_obras
+           ADD COLUMN periodo_ano_inicio INTEGER,
+           ADD COLUMN periodo_mes_inicio INTEGER,
+           ADD COLUMN periodo_ano_fim    INTEGER,
+           ADD COLUMN periodo_mes_fim    INTEGER"""
+    )
+    log.info("Migração grupos_obras: colunas de período padrão adicionadas")
 
 
 def _pool_conn():
@@ -396,11 +415,15 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
     async with _pool.acquire() as conn:
         if is_admin:
             grupos = await conn.fetch(
-                "SELECT id, nome, descricao, obra_especial, created_by FROM grupos_obras ORDER BY nome"
+                """SELECT id, nome, descricao, obra_especial, created_by,
+                          periodo_ano_inicio, periodo_mes_inicio, periodo_ano_fim, periodo_mes_fim
+                   FROM grupos_obras ORDER BY nome"""
             )
         else:
             grupos = await conn.fetch(
-                """SELECT g.id, g.nome, g.descricao, g.obra_especial, g.created_by
+                """SELECT g.id, g.nome, g.descricao, g.obra_especial, g.created_by,
+                          g.periodo_ano_inicio, g.periodo_mes_inicio,
+                          g.periodo_ano_fim, g.periodo_mes_fim
                    FROM grupos_obras g
                    WHERE g.created_by = $1
                       OR EXISTS (
@@ -463,6 +486,12 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             ),
             "shared_with": shares_map.get(g["id"], []),
             "empresas_greedy": greedy_map.get(g["id"], []),
+            "periodo_padrao": {
+                "ano_inicio": g["periodo_ano_inicio"],
+                "mes_inicio": g["periodo_mes_inicio"],
+                "ano_fim": g["periodo_ano_fim"],
+                "mes_fim": g["periodo_mes_fim"],
+            } if g["periodo_ano_inicio"] is not None else None,
         }
         for g in grupos
     ]
@@ -574,6 +603,19 @@ async def update_grupo(
         "shared_with": new_shares,
         "empresas_greedy": empresas_greedy,
     }
+
+
+async def save_periodo_grupo(
+    grupo_id: int, ano_inicio: int, mes_inicio: int, ano_fim: int, mes_fim: int
+) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE grupos_obras
+               SET periodo_ano_inicio=$2, periodo_mes_inicio=$3,
+                   periodo_ano_fim=$4, periodo_mes_fim=$5, updated_at=NOW()
+               WHERE id=$1""",
+            grupo_id, ano_inicio, mes_inicio, ano_fim, mes_fim,
+        )
 
 
 async def delete_grupo(grupo_id: int) -> None:

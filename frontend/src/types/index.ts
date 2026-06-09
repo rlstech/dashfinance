@@ -125,6 +125,7 @@ export interface GrupoObras {
   can_edit?: boolean
   shared_with?: GrupoShareItem[]
   empresas_greedy?: string[]
+  periodo_padrao?: { ano_inicio: number; mes_inicio: number; ano_fim: number; mes_fim: number } | null
 }
 
 export interface UserBasic {
