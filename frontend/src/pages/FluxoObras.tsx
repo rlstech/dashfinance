@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, FileDown, Lock, RefreshCw, Search, Share2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, FileDown, Lock, Pencil, RefreshCw, Search, Share2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
@@ -701,29 +701,65 @@ interface GlobalFieldProps {
 }
 
 function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, readOnly }: GlobalFieldProps) {
-  const [raw, setRaw] = useState(value ? String(value) : '')
-  useEffect(() => { setRaw(value ? String(value) : '') }, [value])
+  const [editing, setEditing] = useState(false)
+  const [raw, setRaw] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const diff = r2(soma - value)
   const ok = Math.abs(diff) <= 0.01
 
+  function startEdit() {
+    if (disabled || readOnly) return
+    setRaw(value ? String(value) : '')
+    setEditing(true)
+  }
+
+  function commit() {
+    const p = parseFloat(raw.replace(',', '.'))
+    onChange(isNaN(p) ? 0 : p)
+    setEditing(false)
+  }
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select()
+  }, [editing])
+
   return (
-    <div className="flex flex-col gap-1 min-w-[220px]">
+    <div className="flex flex-col gap-1 min-w-[200px]">
       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={raw}
-          disabled={disabled || readOnly}
-          onChange={(e) => setRaw(e.target.value)}
-          onBlur={() => { const p = parseFloat(raw.replace(',', '.')); onChange(isNaN(p) ? 0 : p) }}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-          placeholder="0,00"
-          className={cn(
-            'w-32 text-right tabular-nums text-sm font-bold border-2 px-2 py-1 outline-none',
-            readOnly ? 'bg-bgBase border-grid text-muted-foreground' : 'bg-white border-dark focus:border-brand',
-          )}
-        />
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="decimal"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            className="w-36 text-right tabular-nums text-sm font-bold border-2 border-brand px-2 py-1 outline-none bg-white"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={startEdit}
+            disabled={disabled || readOnly}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1 min-w-[140px] text-right tabular-nums text-sm font-black',
+              readOnly
+                ? 'text-muted-foreground cursor-default'
+                : 'text-dark hover:text-brand transition-colors cursor-pointer group',
+            )}
+            title={readOnly ? undefined : 'Clique para editar'}
+          >
+            <span className="flex-1 text-right">{value === 0 ? '—' : formatCurrency(value)}</span>
+            {!readOnly && (
+              <Pencil className="h-3 w-3 text-muted-foreground/40 group-hover:text-brand flex-shrink-0 transition-colors" />
+            )}
+          </button>
+        )}
         {!readOnly && (
           <button
             type="button"
@@ -893,6 +929,27 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
     save.mutate({ grupoId, obraCodigo: data.obra_codigo, body })
   }
 
+  function handleCancelar() {
+    setCustoPrev(meses.map((m) => m.custo_previsto))
+    setReceitaPrev(meses.map((m) => m.receita_prevista))
+    setCustoGlobal(data.custo_global)
+    setReceitaGlobal(data.receita_global)
+  }
+
+  function handleDistribuirCusto() {
+    if (custoPrev.some((v) => v !== 0) && !window.confirm(
+      'Isso vai substituir os valores mensais de Custo Previsto pelos valores distribuídos igualmente. Continuar?'
+    )) return
+    setCustoPrev(distribuirIgual(custoGlobal, n))
+  }
+
+  function handleDistribuirReceita() {
+    if (receitaPrev.some((v) => v !== 0) && !window.confirm(
+      'Isso vai substituir os valores mensais de Receita Prevista pelos valores distribuídos igualmente. Continuar?'
+    )) return
+    setReceitaPrev(distribuirIgual(receitaGlobal, n))
+  }
+
   type RowDef =
     | { label: string; kind: 'custo' }
     | { label: string; kind: 'receita' }
@@ -959,7 +1016,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
               value={custoGlobal}
               soma={somaCusto}
               onChange={setCustoGlobal}
-              onDistribuir={() => setCustoPrev(distribuirIgual(custoGlobal, n))}
+              onDistribuir={handleDistribuirCusto}
               disabled={!canEdit || save.isPending}
             />
             <GlobalField
@@ -967,20 +1024,32 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
               value={receitaGlobal}
               soma={somaReceita}
               onChange={setReceitaGlobal}
-              onDistribuir={() => setReceitaPrev(distribuirIgual(receitaGlobal, n))}
+              onDistribuir={handleDistribuirReceita}
               disabled={!canEdit || save.isPending}
               readOnly={!!especial}
             />
             <div className="flex flex-col gap-1 ml-auto">
-              <button
-                type="button"
-                onClick={handleSalvar}
-                disabled={!canEdit || !balanced || !dirty || save.isPending}
-                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-5 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-40 disabled:hover:bg-dark disabled:hover:text-white"
-                title={!balanced ? 'A soma dos meses deve ser igual ao valor global' : undefined}
-              >
-                {save.isPending ? 'Salvando…' : 'Salvar'}
-              </button>
+              <div className="flex items-center gap-2">
+                {dirty && (
+                  <button
+                    type="button"
+                    onClick={handleCancelar}
+                    disabled={save.isPending}
+                    className="text-xs font-black uppercase tracking-widest border-2 border-dark px-5 py-2 bg-white hover:bg-red-50 hover:border-red-500 hover:text-red-600 transition-colors disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSalvar}
+                  disabled={!canEdit || !balanced || !dirty || save.isPending}
+                  className="text-xs font-black uppercase tracking-widest bg-dark text-white px-5 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-40 disabled:hover:bg-dark disabled:hover:text-white"
+                  title={!balanced ? 'A soma dos meses deve ser igual ao valor global' : undefined}
+                >
+                  {save.isPending ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
               {!canEdit ? (
                 <span className="text-[11px] text-muted-foreground italic">Somente leitura</span>
               ) : !balanced ? (
@@ -1373,6 +1442,23 @@ export default function FluxoObras() {
   })
   const [view, setView] = useState<'grupos' | 'obras'>('grupos')
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
+
+  // Carrega o período salvo ao abrir um grupo
+  useEffect(() => {
+    if (grupoAtivoId === null) return
+    const saved = localStorage.getItem(`fluxo-periodo-${grupoAtivoId}`)
+    if (saved) {
+      try { setPeriodo(JSON.parse(saved)) } catch {}
+    } else {
+      setPeriodo({ anoInicio: currentYear, mesInicio: 1, anoFim: currentYear, mesFim: 12 })
+    }
+  }, [grupoAtivoId])
+
+  // Salva o período sempre que for alterado com um grupo ativo
+  useEffect(() => {
+    if (grupoAtivoId === null) return
+    localStorage.setItem(`fluxo-periodo-${grupoAtivoId}`, JSON.stringify(periodo))
+  }, [periodo, grupoAtivoId])
   // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
   const [modalState, setModalState] = useState<'novo' | GrupoObras | null>(null)
   // filtros para dados reais
