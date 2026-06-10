@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, FileDown, Lock, Pencil, RefreshCw, Search, Share2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, RefreshCw, Search, Share2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
@@ -783,6 +783,92 @@ function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, rea
   )
 }
 
+// ── Modal: histórico completo de alterações de previsto de uma obra ──────────
+function ObraHistoricoModal({
+  obraCodigo, logs, onClose,
+}: {
+  obraCodigo: string
+  logs: PlanejamentoLogEntry[]
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white w-full max-w-3xl max-h-[85vh] flex flex-col block-border shadow-hard"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-dark text-white flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <History className="h-4 w-4 flex-shrink-0 text-brand" />
+            <p className="text-xs font-black uppercase tracking-widest truncate">
+              Histórico de Alterações — {obraCodigo}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-white/70 hover:text-white transition-colors flex-shrink-0"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Conteúdo */}
+        <div className="overflow-auto flex-1">
+          {logs.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground font-bold">
+              Nenhuma alteração registrada para esta obra.
+            </p>
+          ) : (
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-bgBase border-b-2 border-dark">
+                  <th className="text-left font-black uppercase tracking-widest px-4 py-2">Data/Hora</th>
+                  <th className="text-left font-black uppercase tracking-widest px-4 py-2">Competência</th>
+                  <th className="text-left font-black uppercase tracking-widest px-4 py-2">Campo</th>
+                  <th className="text-right font-black uppercase tracking-widest px-4 py-2">Anterior</th>
+                  <th className="text-right font-black uppercase tracking-widest px-4 py-2">Novo</th>
+                  <th className="text-left font-black uppercase tracking-widest px-4 py-2">Usuário</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((l, i) => (
+                  <tr key={i} className="border-b border-grid hover:bg-brand/5 transition-colors">
+                    <td className="px-4 py-1.5 whitespace-nowrap tabular-nums">{formatDateTime(l.changed_at)}</td>
+                    <td className="px-4 py-1.5 whitespace-nowrap font-bold">{MESES[l.mes - 1]}/{l.ano}</td>
+                    <td className="px-4 py-1.5 whitespace-nowrap">
+                      {l.campo === 'custo_previsto' ? 'Custo Previsto' : 'Receita Prevista'}
+                    </td>
+                    <td className="px-4 py-1.5 text-right tabular-nums text-muted-foreground">{formatCurrency(l.valor_anterior)}</td>
+                    <td className="px-4 py-1.5 text-right tabular-nums font-black text-dark">{formatCurrency(l.valor_novo)}</td>
+                    <td className="px-4 py-1.5 whitespace-nowrap">{l.changed_by_name ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t-2 border-grid flex items-center justify-between flex-shrink-0">
+          <span className="text-[11px] text-muted-foreground">{logs.length} alteração(ões)</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs font-black uppercase tracking-widest border-2 border-dark px-4 py-2 bg-white hover:bg-brand hover:border-brand transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Célula de previsto editável com histórico no hover ───────────────────────
 function PrevistoCell({
   value, onChange, disabled, history,
@@ -837,7 +923,10 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
   const n = meses.length
 
   const save = useSaveObraPlanejamento()
-  const { data: logs } = useObraLogs(collapsed ? null : grupoId, collapsed ? null : data.obra_codigo)
+  // Busca sempre (mesmo recolhida) para saber se a obra tem histórico de alterações.
+  const { data: logs } = useObraLogs(grupoId, data.obra_codigo)
+  const hasHist = (logs?.length ?? 0) > 0
+  const [showHist, setShowHist] = useState(false)
 
   // Rascunho local do previsto + valores globais
   const [custoPrev, setCustoPrev] = useState<number[]>(() => meses.map((m) => m.custo_previsto))
@@ -980,29 +1069,53 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
     ? cn('font-black', saldoReal >= 0 ? 'text-dark' : 'text-red-700')
     : cn('font-black', saldoReal >= 0 ? 'text-teal-300' : 'text-red-400')
 
+  const histBtnCls = especial
+    ? 'border-dark/40 text-dark hover:bg-dark hover:text-brand'
+    : 'border-amber-400/60 text-amber-300 hover:bg-amber-400 hover:text-dark'
+
   return (
     <div className="bg-white block-border shadow-hard">
-      <button type="button" className={headerCls} onClick={() => setCollapsed((c) => !c)}>
-        <div className="flex items-center gap-3">
-          {collapsed ? <ChevronRight className="h-4 w-4 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
-          <span className="text-xs font-black uppercase tracking-widest text-left">{data.obra_codigo}</span>
-          {especial && (
-            <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">Obra Especial</span>
-          )}
-          {!collapsed && dirty && (
-            <span className="text-[10px] font-black uppercase tracking-widest bg-amber-400 text-dark px-2 py-0.5">Não salvo</span>
-          )}
-        </div>
-        <div className="flex items-center gap-6 text-xs tabular-nums">
-          <span className={cn('hidden sm:inline', headerTextCls)}>
-            Custo Real: <span className={headerValCls}>{formatCurrency(totalCustoReal)}</span>
-          </span>
-          <span className={cn('hidden sm:inline', headerTextCls)}>
-            Rec. Realizada: <span className={headerValCls}>{formatCurrency(totalRecReal)}</span>
-          </span>
-          <span className={saldoCls}>Saldo: {formatCurrency(saldoReal)}</span>
-        </div>
-      </button>
+      <div className={headerCls}>
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex items-center justify-between gap-6 flex-1 min-w-0 text-left"
+        >
+          <div className="flex items-center gap-3">
+            {collapsed ? <ChevronRight className="h-4 w-4 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 flex-shrink-0" />}
+            <span className="text-xs font-black uppercase tracking-widest text-left">{data.obra_codigo}</span>
+            {especial && (
+              <span className="text-[10px] font-black uppercase tracking-widest bg-dark/20 px-2 py-0.5">Obra Especial</span>
+            )}
+            {!collapsed && dirty && (
+              <span className="text-[10px] font-black uppercase tracking-widest bg-amber-400 text-dark px-2 py-0.5">Não salvo</span>
+            )}
+          </div>
+          <div className="flex items-center gap-6 text-xs tabular-nums">
+            <span className={cn('hidden sm:inline', headerTextCls)}>
+              Custo Real: <span className={headerValCls}>{formatCurrency(totalCustoReal)}</span>
+            </span>
+            <span className={cn('hidden sm:inline', headerTextCls)}>
+              Rec. Realizada: <span className={headerValCls}>{formatCurrency(totalRecReal)}</span>
+            </span>
+            <span className={saldoCls}>Saldo: {formatCurrency(saldoReal)}</span>
+          </div>
+        </button>
+        {hasHist && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowHist(true) }}
+            className={cn(
+              'flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest border-2 px-2 py-1 ml-4 flex-shrink-0 transition-colors',
+              histBtnCls,
+            )}
+            title="Ver histórico de alterações do previsto"
+          >
+            <History className="h-3 w-3" />
+            <span className="hidden sm:inline">Histórico</span>
+          </button>
+        )}
+      </div>
 
       {!collapsed && (
         <>
@@ -1120,6 +1233,14 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
             </table>
           </div>
         </>
+      )}
+
+      {showHist && (
+        <ObraHistoricoModal
+          obraCodigo={data.obra_codigo}
+          logs={logs ?? []}
+          onClose={() => setShowHist(false)}
+        />
       )}
     </div>
   )
