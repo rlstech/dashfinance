@@ -1012,7 +1012,9 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
   const acumuladoReal = meses.map((m, i) => {
     if (mesProjetado[i]) {
       const custoMes = Math.max(m.custo_real, custoPrev[i])
-      const receitaMes = especial ? meses[i].receita_prevista : receitaPrev[i]
+      const recPrevMes = especial ? meses[i].receita_prevista : receitaPrev[i]
+      // Havendo receita realizada no mês projetado, usa a realizada no lugar da prevista
+      const receitaMes = recRealParaAcc[i] > 0 ? recRealParaAcc[i] : recPrevMes
       accReal += receitaMes - custoMes
     } else {
       accReal += recRealParaAcc[i] - m.custo_real
@@ -1308,7 +1310,8 @@ function DemaisObrasSection({ data, breakdown, projetar }: DemaisObrasSectionPro
   let accReal = 0
   const acumuladoReal = meses.map((m, i) => {
     if (mesProjetado[i]) {
-      accReal += m.receita_prevista - Math.max(m.custo_real, m.custo_previsto)
+      const receitaMes = m.receita_realizada > 0 ? m.receita_realizada : m.receita_prevista
+      accReal += receitaMes - Math.max(m.custo_real, m.custo_previsto)
     } else {
       accReal += m.receita_realizada - m.custo_real
     }
@@ -1474,7 +1477,9 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
   const mesProjetado = mesesRef.map((m) => projetar && isMesProjetado(m.ano, m.mes))
   let acc = 0
   const saldoAcc = saldoMes.map((s, i) => {
-    acc += mesProjetado[i] ? (recPrev[i] - Math.max(custoReal[i], custoPrev[i])) : s
+    acc += mesProjetado[i]
+      ? ((recReal[i] > 0 ? recReal[i] : recPrev[i]) - Math.max(custoReal[i], custoPrev[i]))
+      : s
     return acc
   })
 
@@ -2113,8 +2118,9 @@ export default function FluxoObras() {
               </label>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Com a projeção ativa, a partir do mês atual o <strong>Fluxo Acumulado Real</strong> deixa de usar só o realizado:
-                a cada mês soma a <strong>Receita Prevista</strong> e subtrai o <strong>maior valor entre Custo Real e Custo Previsto</strong>,
-                partindo do acumulado do mês anterior. Os meses projetados aparecem destacados
+                a cada mês parte do acumulado do mês anterior, soma a <strong>Receita Realizada</strong> (ou, se ainda não houver,
+                a <strong>Receita Prevista</strong>) e subtrai o <strong>maior valor entre Custo Real e Custo Previsto</strong>.
+                Os meses projetados aparecem destacados
                 (<span className="italic text-violet-700 bg-violet-50 px-1">roxo/itálico</span>).
                 Desligue para voltar ao cálculo somente com valores realizados.
               </p>
