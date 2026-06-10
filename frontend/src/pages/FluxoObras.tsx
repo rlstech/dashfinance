@@ -28,6 +28,12 @@ import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 const currentYear = new Date().getFullYear()
+const CUR_YEAR = new Date().getFullYear()
+const CUR_MONTH = new Date().getMonth() + 1
+// Mês atual em diante (usado pela projeção do Fluxo Acumulado Real)
+function isMesProjetado(ano: number, mes: number): boolean {
+  return ano > CUR_YEAR || (ano === CUR_YEAR && mes >= CUR_MONTH)
+}
 
 function periodoSlots(p: Periodo): Array<{ ano: number; mes: number }> {
   const slots: Array<{ ano: number; mes: number }> = []
@@ -46,9 +52,10 @@ interface EditableCellProps {
   value: number
   onSave: (v: number) => void
   disabled?: boolean
+  colorCls?: string
 }
 
-function EditableCell({ value, onSave, disabled }: EditableCellProps) {
+function EditableCell({ value, onSave, disabled, colorCls }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [raw, setRaw] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -90,7 +97,7 @@ function EditableCell({ value, onSave, disabled }: EditableCellProps) {
       className={cn(
         'block w-full text-right tabular-nums text-xs px-1 py-0.5',
         disabled ? 'cursor-default' : 'cursor-pointer hover:bg-brand/10',
-        value === 0 ? 'text-muted-foreground/30' : 'text-dark',
+        value === 0 ? 'text-muted-foreground/30' : (colorCls ?? 'text-dark'),
       )}
       onClick={startEdit}
       title={disabled ? undefined : 'Clique para editar'}
@@ -102,11 +109,17 @@ function EditableCell({ value, onSave, disabled }: EditableCellProps) {
 
 // ── Célula somente leitura com cor ────────────────────────────────────────────
 
-function ValueCell({ value, bold }: { value: number; bold?: boolean }) {
-  const colorCls =
+function ValueCell({ value, bold, colorCls, projected }: { value: number; bold?: boolean; colorCls?: string; projected?: boolean }) {
+  const autoCls =
     value < 0 ? 'text-red-500' : value > 0 ? 'text-teal-600' : 'text-muted-foreground/30'
+  const cls = value === 0 ? 'text-muted-foreground/30' : (colorCls ?? autoCls)
   return (
-    <span className={cn('block w-full text-right tabular-nums text-xs px-1 py-0.5', colorCls, bold && 'font-black')}>
+    <span className={cn(
+      'block w-full text-right tabular-nums text-xs px-1 py-0.5',
+      cls,
+      bold && 'font-black',
+      projected && 'italic bg-violet-50 text-violet-700',
+    )}>
       {value === 0 ? '—' : formatCurrency(value)}
     </span>
   )
@@ -871,17 +884,18 @@ function ObraHistoricoModal({
 
 // ── Célula de previsto editável com histórico no hover ───────────────────────
 function PrevistoCell({
-  value, onChange, disabled, history,
+  value, onChange, disabled, history, colorCls,
 }: {
   value: number
   onChange: (v: number) => void
   disabled?: boolean
   history?: PlanejamentoLogEntry[]
+  colorCls?: string
 }) {
   const hasHist = !!history && history.length > 0
   return (
     <div className="relative group">
-      <EditableCell value={value} onSave={onChange} disabled={disabled} />
+      <EditableCell value={value} onSave={onChange} disabled={disabled} colorCls={colorCls} />
       {hasHist && (
         <>
           <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-amber-500 pointer-events-none" />
@@ -915,9 +929,10 @@ interface ObraSectionProps {
   canEdit: boolean
   defaultCollapsed: boolean
   especial?: { recRealizadaPct: number[] }
+  projetar: boolean
 }
 
-function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: ObraSectionProps) {
+function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, projetar }: ObraSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const meses: FluxoMesRow[] = data.meses
   const n = meses.length
@@ -992,8 +1007,16 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
   const recRealParaAcc = especial
     ? meses.map((m, i) => especial.recRealizadaPct[i] + m.receita_realizada)
     : meses.map((m) => m.receita_realizada)
+  // Índices cujo acumulado é projetado (toggle ligado + mês atual em diante)
+  const mesProjetado = meses.map((m) => projetar && isMesProjetado(m.ano, m.mes))
   const acumuladoReal = meses.map((m, i) => {
-    accReal += recRealParaAcc[i] - m.custo_real
+    if (mesProjetado[i]) {
+      const custoMes = Math.max(m.custo_real, custoPrev[i])
+      const receitaMes = especial ? meses[i].receita_prevista : receitaPrev[i]
+      accReal += receitaMes - custoMes
+    } else {
+      accReal += recRealParaAcc[i] - m.custo_real
+    }
     return accReal
   })
 
@@ -1037,25 +1060,25 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
   }
 
   type RowDef =
-    | { label: string; kind: 'custo' }
-    | { label: string; kind: 'receita' }
-    | { label: string; kind: 'readonly' | 'accumulated'; values: number[] }
+    | { label: string; kind: 'custo'; colorCls?: string }
+    | { label: string; kind: 'receita'; colorCls?: string }
+    | { label: string; kind: 'readonly' | 'accumulated'; values: number[]; colorCls?: string }
 
   const rowDefs: RowDef[] = especial
     ? [
-        { label: 'Custo Previsto', kind: 'custo' },
-        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
-        { label: 'Receita Prevista (%)', kind: 'readonly', values: meses.map((m) => m.receita_prevista) },
-        { label: 'Receita Realizada (%)', kind: 'readonly', values: especial.recRealizadaPct },
-        { label: 'Receita Financeira', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
+        { label: 'Custo Previsto', kind: 'custo', colorCls: 'text-red-400' },
+        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real), colorCls: 'text-red-600' },
+        { label: 'Receita Prevista (%)', kind: 'readonly', values: meses.map((m) => m.receita_prevista), colorCls: 'text-teal-500' },
+        { label: 'Receita Realizada (%)', kind: 'readonly', values: especial.recRealizadaPct, colorCls: 'text-teal-700' },
+        { label: 'Receita Financeira', kind: 'readonly', values: meses.map((m) => m.receita_realizada), colorCls: 'text-teal-700' },
         { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
         { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
       ]
     : [
-        { label: 'Custo Previsto', kind: 'custo' },
-        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real) },
-        { label: 'Receita Prevista', kind: 'receita' },
-        { label: 'Receita Realizada', kind: 'readonly', values: meses.map((m) => m.receita_realizada) },
+        { label: 'Custo Previsto', kind: 'custo', colorCls: 'text-red-400' },
+        { label: 'Custo Real', kind: 'readonly', values: meses.map((m) => m.custo_real), colorCls: 'text-red-600' },
+        { label: 'Receita Prevista', kind: 'receita', colorCls: 'text-teal-500' },
+        { label: 'Receita Realizada', kind: 'readonly', values: meses.map((m) => m.receita_realizada), colorCls: 'text-teal-700' },
         { label: 'Fluxo Acumulado Planejado', kind: 'accumulated', values: acumuladoPlanejado },
         { label: 'Fluxo Acumulado Real', kind: 'accumulated', values: acumuladoReal },
       ]
@@ -1186,11 +1209,15 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
                       {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
                     </th>
                   ))}
+                  <th className="text-right font-black uppercase tracking-widest px-2 py-2 w-24 border-l-2 border-dark bg-bgBase">
+                    Total
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rowDefs.map((row) => {
                   const isAccumulated = row.kind === 'accumulated'
+                  const isAccReal = row.label === 'Fluxo Acumulado Real'
                   const editable = row.kind === 'custo' || row.kind === 'receita'
                   const rowBg = isAccumulated ? 'bg-bgBase' : 'bg-white'
                   let values: number[]
@@ -1198,6 +1225,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
                   else if (row.kind === 'receita') values = receitaPrev
                   else values = row.values
                   const campo = row.kind === 'custo' ? 'custo_previsto' : 'receita_prevista'
+                  const totalVal = isAccumulated ? (values[values.length - 1] ?? 0) : values.reduce((s, v) => s + v, 0)
                   return (
                     <tr key={row.label} className={cn('border-b border-grid hover:bg-brand/5 transition-colors', rowBg)}>
                       <td className={cn(
@@ -1212,6 +1240,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
                             <PrevistoCell
                               value={val}
                               disabled={!canEdit || save.isPending}
+                              colorCls={row.colorCls}
                               history={histMap[`${meses[mesIdx].ano}-${meses[mesIdx].mes}-${campo}`]}
                               onChange={(v) => {
                                 if (row.kind === 'custo') {
@@ -1222,10 +1251,23 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
                               }}
                             />
                           ) : (
-                            <ValueCell value={val} bold={isAccumulated} />
+                            <ValueCell
+                              value={val}
+                              bold={isAccumulated}
+                              colorCls={row.colorCls}
+                              projected={isAccReal && mesProjetado[mesIdx]}
+                            />
                           )}
                         </td>
                       ))}
+                      <td className={cn('px-1 py-1 border-l-2 border-dark', rowBg)}>
+                        <ValueCell
+                          value={totalVal}
+                          bold
+                          colorCls={isAccumulated ? undefined : row.colorCls}
+                          projected={isAccReal && mesProjetado[n - 1]}
+                        />
+                      </td>
                     </tr>
                   )
                 })}
@@ -1251,9 +1293,10 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial }: Obr
 interface DemaisObrasSectionProps {
   data: FluxoPlanejamentoResponse & { _greedyCount: number; _greedyEmpresas: string[] }
   breakdown: FluxoPlanejamentoResponse[]
+  projetar: boolean
 }
 
-function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
+function DemaisObrasSection({ data, breakdown, projetar }: DemaisObrasSectionProps) {
   const [collapsed, setCollapsed] = useState(true)
   const meses = data.meses
 
@@ -1261,9 +1304,14 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
   const totalRecReal   = meses.reduce((s, m) => s + m.receita_realizada, 0)
   const saldoReal      = totalRecReal - totalCustoReal
 
+  const mesProjetado = meses.map((m) => projetar && isMesProjetado(m.ano, m.mes))
   let accReal = 0
-  const acumuladoReal = meses.map((m) => {
-    accReal += m.receita_realizada - m.custo_real
+  const acumuladoReal = meses.map((m, i) => {
+    if (mesProjetado[i]) {
+      accReal += m.receita_prevista - Math.max(m.custo_real, m.custo_previsto)
+    } else {
+      accReal += m.receita_realizada - m.custo_real
+    }
     return accReal
   })
 
@@ -1275,11 +1323,11 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
     return contribuintes.map((x) => `${x.obra}: ${formatCurrency(x.val)}`).join('\n')
   }
 
-  const rows: Array<{ label: string; values: number[]; tooltipField?: 'custo_real' | 'receita_realizada'; accumulated?: boolean }> = [
-    { label: 'Custo Previsto', values: meses.map((m) => m.custo_previsto) },
-    { label: 'Receita Prevista', values: meses.map((m) => m.receita_prevista) },
-    { label: 'Custo Real', values: meses.map((m) => m.custo_real), tooltipField: 'custo_real' },
-    { label: 'Receita Realizada', values: meses.map((m) => m.receita_realizada), tooltipField: 'receita_realizada' },
+  const rows: Array<{ label: string; values: number[]; tooltipField?: 'custo_real' | 'receita_realizada'; accumulated?: boolean; colorCls?: string }> = [
+    { label: 'Custo Previsto', values: meses.map((m) => m.custo_previsto), colorCls: 'text-red-400' },
+    { label: 'Receita Prevista', values: meses.map((m) => m.receita_prevista), colorCls: 'text-teal-500' },
+    { label: 'Custo Real', values: meses.map((m) => m.custo_real), tooltipField: 'custo_real', colorCls: 'text-red-600' },
+    { label: 'Receita Realizada', values: meses.map((m) => m.receita_realizada), tooltipField: 'receita_realizada', colorCls: 'text-teal-700' },
     { label: 'Fluxo Acumulado Real', values: acumuladoReal, accumulated: true },
   ]
 
@@ -1327,11 +1375,16 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
                     {MESES[m.mes - 1]}/{String(m.ano).slice(2)}
                   </th>
                 ))}
+                <th className="text-right font-black uppercase tracking-widest px-2 py-2 w-24 border-l-2 border-dark bg-bgBase">
+                  Total
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
                 const rowBg = row.accumulated ? 'bg-bgBase' : 'bg-white'
+                const lastIdx = row.values.length - 1
+                const totalVal = row.accumulated ? (row.values[lastIdx] ?? 0) : row.values.reduce((s, v) => s + v, 0)
                 return (
                   <tr
                     key={row.label}
@@ -1345,16 +1398,17 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
                     </td>
                     {row.values.map((val, mesIdx) => {
                       const tooltip = row.tooltipField ? buildTooltip(mesIdx, row.tooltipField) : undefined
+                      const colorCls = val === 0 ? 'text-muted-foreground/30' : (row.colorCls ?? 'text-dark')
                       return (
                         <td key={mesIdx} className="px-1 py-1">
                           {row.accumulated ? (
-                            <ValueCell value={val} bold />
+                            <ValueCell value={val} bold projected={mesProjetado[mesIdx]} />
                           ) : tooltip ? (
                             <span
                               title={tooltip}
                               className={cn(
                                 'block w-full text-right tabular-nums text-xs px-1 py-0.5 cursor-help underline decoration-dotted decoration-muted-foreground/40',
-                                val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                                colorCls,
                               )}
                             >
                               {val === 0 ? '—' : formatCurrency(val)}
@@ -1362,7 +1416,7 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
                           ) : (
                             <span className={cn(
                               'block w-full text-right tabular-nums text-xs px-1 py-0.5',
-                              val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                              colorCls,
                             )}>
                               {val === 0 ? '—' : formatCurrency(val)}
                             </span>
@@ -1370,6 +1424,14 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
                         </td>
                       )
                     })}
+                    <td className={cn('px-1 py-1 border-l-2 border-dark', rowBg)}>
+                      <ValueCell
+                        value={totalVal}
+                        bold
+                        colorCls={row.accumulated ? undefined : row.colorCls}
+                        projected={row.accumulated && mesProjetado[lastIdx]}
+                      />
+                    </td>
                   </tr>
                 )
               })}
@@ -1386,28 +1448,41 @@ function DemaisObrasSection({ data, breakdown }: DemaisObrasSectionProps) {
 interface ConsolidadoGrupoProps {
   obras: FluxoPlanejamentoResponse[]
   obrasGreedy?: FluxoPlanejamentoResponse | null
+  projetar: boolean
 }
 
-function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
+function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProps) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const nSlots = obras[0]?.meses.length ?? 0
+  const mesesRef = obras[0]?.meses ?? []
+  const nSlots = mesesRef.length
   const custoReal = Array.from({ length: nSlots }, (_, i) =>
     obras.reduce((s, o) => s + o.meses[i].custo_real, 0) + (obrasGreedy?.meses[i].custo_real ?? 0)
   )
   const recReal   = Array.from({ length: nSlots }, (_, i) =>
     obras.reduce((s, o) => s + o.meses[i].receita_realizada, 0) + (obrasGreedy?.meses[i].receita_realizada ?? 0)
   )
+  const custoPrev = Array.from({ length: nSlots }, (_, i) =>
+    obras.reduce((s, o) => s + o.meses[i].custo_previsto, 0) + (obrasGreedy?.meses[i].custo_previsto ?? 0)
+  )
+  const recPrev   = Array.from({ length: nSlots }, (_, i) =>
+    obras.reduce((s, o) => s + o.meses[i].receita_prevista, 0) + (obrasGreedy?.meses[i].receita_prevista ?? 0)
+  )
   const saldoMes  = custoReal.map((c, i) => recReal[i] - c)
 
+  // Saldo acumulado: a partir do mês atual, projeta usando previsto (custo = maior entre real e previsto)
+  const mesProjetado = mesesRef.map((m) => projetar && isMesProjetado(m.ano, m.mes))
   let acc = 0
-  const saldoAcc = saldoMes.map((s) => { acc += s; return acc })
+  const saldoAcc = saldoMes.map((s, i) => {
+    acc += mesProjetado[i] ? (recPrev[i] - Math.max(custoReal[i], custoPrev[i])) : s
+    return acc
+  })
 
   const totalCustoReal = custoReal.reduce((s, v) => s + v, 0)
   const totalRecReal   = recReal.reduce((s, v) => s + v, 0)
   const saldoAnual     = totalRecReal - totalCustoReal
 
-  type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean; tooltipField?: 'custo_real' | 'receita_realizada' }
+  type Row = { label: string; values: number[]; total: number; bold?: boolean; separator?: boolean; tooltipField?: 'custo_real' | 'receita_realizada'; colorCls?: string; projectedRow?: boolean }
 
   function buildTooltip(mesIdx: number, field: 'custo_real' | 'receita_realizada'): string | undefined {
     const contribuintes = obras
@@ -1422,10 +1497,10 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
   }
 
   const rows: Row[] = [
-    { label: 'Custo Real',        values: custoReal, total: totalCustoReal, tooltipField: 'custo_real' },
-    { label: 'Receita Realizada', values: recReal,   total: totalRecReal,   tooltipField: 'receita_realizada' },
+    { label: 'Custo Real',        values: custoReal, total: totalCustoReal, tooltipField: 'custo_real', colorCls: 'text-red-600' },
+    { label: 'Receita Realizada', values: recReal,   total: totalRecReal,   tooltipField: 'receita_realizada', colorCls: 'text-teal-700' },
     { label: 'Saldo do Mês',      values: saldoMes,  total: saldoMes.reduce((s, v) => s + v, 0), separator: true },
-    { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[nSlots - 1], bold: true },
+    { label: 'Saldo Acumulado',   values: saldoAcc,  total: saldoAcc[nSlots - 1], bold: true, projectedRow: true },
   ]
 
   return (
@@ -1497,16 +1572,17 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
                     </td>
                     {row.values.map((val, i) => {
                       const tooltip = row.tooltipField ? buildTooltip(i, row.tooltipField) : undefined
+                      const colorCls = val === 0 ? 'text-muted-foreground/30' : (row.colorCls ?? 'text-dark')
                       return (
                         <td key={i} className="px-1 py-1">
                           {isSaldo || row.bold ? (
-                            <ValueCell value={val} bold={row.bold} />
+                            <ValueCell value={val} bold={row.bold} projected={row.projectedRow && mesProjetado[i]} />
                           ) : tooltip ? (
                             <span
                               title={tooltip}
                               className={cn(
                                 'block w-full text-right tabular-nums text-xs px-1 py-0.5 cursor-help underline decoration-dotted decoration-muted-foreground/40',
-                                val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                                colorCls,
                               )}
                             >
                               {val === 0 ? '—' : formatCurrency(val)}
@@ -1514,7 +1590,7 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
                           ) : (
                             <span className={cn(
                               'block w-full text-right tabular-nums text-xs px-1 py-0.5',
-                              val === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                              colorCls,
                             )}>
                               {val === 0 ? '—' : formatCurrency(val)}
                             </span>
@@ -1524,11 +1600,11 @@ function ConsolidadoGrupo({ obras, obrasGreedy }: ConsolidadoGrupoProps) {
                     })}
                     <td className={cn('px-1 py-1 border-l-2 border-dark', rowBg)}>
                       {isSaldo || row.bold ? (
-                        <ValueCell value={row.total} bold={row.bold} />
+                        <ValueCell value={row.total} bold={row.bold} projected={row.projectedRow && mesProjetado[nSlots - 1]} />
                       ) : (
                         <span className={cn(
                           'block w-full text-right tabular-nums text-xs px-1 py-0.5 font-bold',
-                          row.total === 0 ? 'text-muted-foreground/30' : 'text-dark',
+                          row.total === 0 ? 'text-muted-foreground/30' : (row.colorCls ?? 'text-dark'),
                         )}>
                           {row.total === 0 ? '—' : formatCurrency(row.total)}
                         </span>
@@ -1560,6 +1636,8 @@ export default function FluxoObras() {
   })
   const [view, setView] = useState<'grupos' | 'obras'>('grupos')
   const [grupoAtivoId, setGrupoAtivoId] = useState<number | null>(null)
+  // Projeção do Fluxo Acumulado Real (toggle local; não persiste)
+  const [projetarFuturo, setProjetarFuturo] = useState(false)
   // 'novo' abre o modal em modo criação; GrupoObras abre em modo edição
   const [modalState, setModalState] = useState<'novo' | GrupoObras | null>(null)
   // filtros para dados reais
@@ -2022,6 +2100,26 @@ export default function FluxoObras() {
               </p>
             </div>
 
+            {/* Painel: Projeção do Fluxo Acumulado Real */}
+            <div className="bg-white block-border p-4 space-y-2">
+              <label className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-dark cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-brand"
+                  checked={projetarFuturo}
+                  onChange={(e) => setProjetarFuturo(e.target.checked)}
+                />
+                Projetar Fluxo Acumulado Real (a partir de {MESES[CUR_MONTH - 1]}/{CUR_YEAR})
+              </label>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Com a projeção ativa, a partir do mês atual o <strong>Fluxo Acumulado Real</strong> deixa de usar só o realizado:
+                a cada mês soma a <strong>Receita Prevista</strong> e subtrai o <strong>maior valor entre Custo Real e Custo Previsto</strong>,
+                partindo do acumulado do mês anterior. Os meses projetados aparecem destacados
+                (<span className="italic text-violet-700 bg-violet-50 px-1">roxo/itálico</span>).
+                Desligue para voltar ao cálculo somente com valores realizados.
+              </p>
+            </div>
+
             <p className="text-xs text-muted-foreground">
               {obrasDoGrupo.length} obra(s) · Informe o <strong>valor global</strong> de custo e receita de cada obra e
               distribua nos meses · a soma precisa fechar com o global para salvar
@@ -2033,6 +2131,7 @@ export default function FluxoObras() {
                 data={obra}
                 canEdit={grupoAtivo?.can_edit === true}
                 defaultCollapsed={obrasDoGrupo.length > 5}
+                projetar={projetarFuturo}
                 especial={obra._isEspecial && obra._recRealizadaPct
                   ? { recRealizadaPct: obra._recRealizadaPct }
                   : undefined}
@@ -2043,11 +2142,12 @@ export default function FluxoObras() {
               <DemaisObrasSection
                 data={obrasGreedy.sintetica}
                 breakdown={obrasGreedy.breakdown}
+                projetar={projetarFuturo}
               />
             )}
 
             {obrasParaRender.length + (obrasGreedy ? 1 : 0) > 1 && (
-              <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} />
+              <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} projetar={projetarFuturo} />
             )}
           </div>
         )}
