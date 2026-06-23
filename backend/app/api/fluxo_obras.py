@@ -10,6 +10,9 @@ from app.models.auth import UserOut
 from app.models.schemas import (
     AtualizarFluxoRealIn,
     BulkImportResult,
+    CustoFinanceiroLinha,
+    CustoFinanceiroResponse,
+    CustoFinanceiroSlot,
     FluxoMesRow,
     FluxoPlanejamentoResponse,
     FluxoRealCachedResponse,
@@ -520,3 +523,82 @@ async def importar_planilha(
 
     count = await pg.bulk_upsert_planejamento(grupo_id, items)
     return BulkImportResult(imported=count, errors=errors)
+
+
+@router.get("/custo-financeiro", response_model=CustoFinanceiroResponse)
+async def get_custo_financeiro(
+    ano: int | None = None,
+    ano_inicio: int | None = None,
+    mes_inicio: int = 1,
+    ano_fim: int | None = None,
+    mes_fim: int = 12,
+    user: UserOut = Depends(get_current_user),
+):
+    """Tesouraria consolidada: transferências bancárias + controle financeiro, mês a mês."""
+    from app.services.queries import EMPRESA_MAP
+
+    yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
+    slots = _periodo_slots(yi, mi, yf, mf)
+
+    empresas_visiveis: set[str] = (
+        set(EMPRESA_MAP.values()) if user.is_admin else set(user.empresas)
+    )
+
+    slots_set: set[tuple[int, int]] = set(slots)
+    slot_index: dict[tuple[int, int], int] = {s: i for i, s in enumerate(slots)}
+    n = len(slots)
+
+    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
+    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
+
+    def _aggregate(
+        records: list[dict],
+    ) -> tuple[dict[str, list[float]], float, float]:
+        by_desc: dict[str, list[float]] = {}
+        total_ent = 0.0
+        total_sai = 0.0
+        for item in records:
+            if item.get("empresa") not in empresas_visiveis:
+                continue
+            try:
+                dt = datetime.strptime(item["data"], "%d/%m/%Y")
+            except (ValueError, TypeError):
+                continue
+            slot = (dt.year, dt.month)
+            if slot not in slots_set:
+                continue
+            desc = item.get("descricao") or "S/Descrição"
+            valor = float(item.get("valor") or 0)
+            sentido = item.get("sentido", "saida")
+            net = valor if sentido == "entrada" else -valor
+            if desc not in by_desc:
+                by_desc[desc] = [0.0] * n
+            by_desc[desc][slot_index[slot]] += net
+            if sentido == "entrada":
+                total_ent += valor
+            else:
+                total_sai += valor
+        return by_desc, total_ent, total_sai
+
+    transf_by_desc, t_ent, t_sai = _aggregate(transf_raw)
+    ctrl_by_desc, c_ent, c_sai = _aggregate(controle_raw)
+
+    def _to_linhas(by_desc: dict[str, list[float]]) -> list[CustoFinanceiroLinha]:
+        linhas = [
+            CustoFinanceiroLinha(descricao=desc, valores=vals, total=sum(vals))
+            for desc, vals in by_desc.items()
+        ]
+        linhas.sort(key=lambda l: abs(l.total), reverse=True)
+        return linhas
+
+    total_entradas = t_ent + c_ent
+    total_saidas = t_sai + c_sai
+
+    return CustoFinanceiroResponse(
+        meses=[CustoFinanceiroSlot(ano=a, mes=m) for a, m in slots],
+        transferencias=_to_linhas(transf_by_desc),
+        controle=_to_linhas(ctrl_by_desc),
+        total_entradas=total_entradas,
+        total_saidas=total_saidas,
+        fluxo_liquido=total_entradas - total_saidas,
+    )

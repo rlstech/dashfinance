@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
 from app.services.cache import get_cached, set_cached, invalidate_prefix
-from app.services.queries import get_ap, get_receitas, get_saldo_banco
+from app.services.queries import get_ap, get_receitas, get_saldo_banco, get_transferencias, get_controle_financeiro
 from app.services.excel import get_excel_data
 
 log = logging.getLogger(__name__)
@@ -28,6 +28,8 @@ async def sync_all() -> dict:
     ap_data: list[dict] = []
     rec_data: list[dict] = []
     saldo_data: list[dict] = []
+    transf_data: list[dict] = []
+    controle_data: list[dict] = []
 
     try:
         ap_data = get_ap(de, ate)
@@ -47,6 +49,18 @@ async def sync_all() -> dict:
         errors.append(f"saldo_banco: {e}")
         log.error("Erro ao buscar saldo: %s", e)
 
+    try:
+        transf_data = get_transferencias(de, ate)
+    except Exception as e:
+        errors.append(f"transferencias: {e}")
+        log.error("Erro ao buscar transferências: %s", e)
+
+    try:
+        controle_data = get_controle_financeiro(de, ate)
+    except Exception as e:
+        errors.append(f"controle_financeiro: {e}")
+        log.error("Erro ao buscar controle financeiro: %s", e)
+
     # Merge Excel data
     try:
         ex_ap, ex_rec = get_excel_data()
@@ -64,10 +78,14 @@ async def sync_all() -> dict:
     await invalidate_prefix("receitas")
     await invalidate_prefix("saldo")
     await invalidate_prefix("filters")
+    await invalidate_prefix("transferencias")
+    await invalidate_prefix("controle")
 
     await set_cached("dash:ap:all", ap_data, ttl=ttl)
     await set_cached("dash:receitas:all", rec_data, ttl=ttl)
     await set_cached("dash:saldo:all", saldo_data, ttl=ttl)
+    await set_cached("dash:transferencias:all", transf_data, ttl=ttl)
+    await set_cached("dash:controle:all", controle_data, ttl=ttl)
     await set_cached(
         "dash:meta",
         {"last_sync": last_sync, "de": de, "ate": ate},
@@ -84,6 +102,8 @@ async def sync_all() -> dict:
         "count_ap": len(ap_data),
         "count_receitas": len(rec_data),
         "count_saldo": len(saldo_data),
+        "count_transferencias": len(transf_data),
+        "count_controle": len(controle_data),
     }
     log.info("Sincronizacao concluida: %s", result)
     return result

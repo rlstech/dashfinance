@@ -155,3 +155,25 @@ class GrupoTotaisReais(BaseModel):
 class AtualizarFluxoRealIn(BaseModel):
     origens: list[str] = ["Pago"]
     status_rec: list[str] = ["Recebida"]
+
+
+# ── Custo Financeiro (Tesouraria) ────────────────────────────────────────────
+
+class CustoFinanceiroSlot(BaseModel):
+    ano: int
+    mes: int
+
+
+class CustoFinanceiroLinha(BaseModel):
+    descricao: str
+    valores: list[float]  # alinhado a meses; net = entrada - saida
+    total: float
+
+
+class CustoFinanceiroResponse(BaseModel):
+    meses: list[CustoFinanceiroSlot]
+    transferencias: list[CustoFinanceiroLinha]
+    controle: list[CustoFinanceiroLinha]
+    total_entradas: float
+    total_saidas: float
+    fluxo_liquido: float

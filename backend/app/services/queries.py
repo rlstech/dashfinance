@@ -293,6 +293,105 @@ def get_receitas(de: str = "2026-01-01", ate: str = "2026-06-30") -> list[dict]:
     ]
 
 
+def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[dict]:
+    """Transferências bancárias (TransfBco). Cada linha gera até 2 registros (perna débito e crédito)."""
+    sql = """
+    SELECT
+        Empresa_tb, EmpresaCred_tb,
+        CAST(BcoDeb_tb AS VARCHAR) AS BcoDeb, ContaDeb_tb,
+        CAST(BcoCred_tb AS VARCHAR) AS BcoCred, ContaCred_tb,
+        Valor_tb, Obs_tb,
+        CONVERT(VARCHAR(10), Data_tb, 103) AS Data
+    FROM TransfBco
+    WHERE Data_tb BETWEEN %s AND %s
+    ORDER BY Data_tb
+    """
+    with get_db() as conn:
+        cur = conn.cursor(as_dict=True)
+        cur.execute(sql, (de, ate))
+        rows = cur.fetchall()
+
+    result: list[dict] = []
+    for r in rows:
+        descricao = (r["Obs_tb"] or "").strip() or "S/Descrição"
+        valor = float(r["Valor_tb"] or 0)
+        data = r["Data"] or ""
+
+        emp_deb = EMPRESA_MAP.get(r["Empresa_tb"], "")
+        banco_deb = str(r["BcoDeb"] or "").strip()
+        conta_deb = str(r["ContaDeb_tb"] or "").strip()
+        if emp_deb and not _is_blocked_banco(emp_deb, banco_deb) and not _is_blocked_conta(emp_deb, banco_deb, conta_deb):
+            result.append({
+                "empresa": emp_deb,
+                "sentido": "saida",
+                "descricao": descricao,
+                "valor": valor,
+                "data": data,
+                "banco": banco_deb,
+                "conta": conta_deb,
+            })
+
+        emp_cred = EMPRESA_MAP.get(r["EmpresaCred_tb"], "")
+        banco_cred = str(r["BcoCred"] or "").strip()
+        conta_cred = str(r["ContaCred_tb"] or "").strip()
+        if emp_cred and not _is_blocked_banco(emp_cred, banco_cred) and not _is_blocked_conta(emp_cred, banco_cred, conta_cred):
+            result.append({
+                "empresa": emp_cred,
+                "sentido": "entrada",
+                "descricao": descricao,
+                "valor": valor,
+                "data": data,
+                "banco": banco_cred,
+                "conta": conta_cred,
+            })
+    return result
+
+
+def get_controle_financeiro(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[dict]:
+    """Controle financeiro (EntSaiEmpAplic). EntSai_es: 0=Saída, 1=Entrada."""
+    sql = """
+    SELECT
+        CASE es.Empresa_es
+            WHEN 1 THEN 'COMBRASEN' WHEN 3 THEN 'DRESDEN'
+            WHEN 4 THEN 'TRUST'     WHEN 5 THEN 'GAMA 01'
+            WHEN 6 THEN 'CONSÓRCIO HMSJ'
+        END AS Empresa,
+        ISNULL(ctm.Desc_cger, 'S/Natureza') AS Natureza,
+        es.EntSai_es,
+        es.Valor_es,
+        CONVERT(VARCHAR(10), es.Data_es, 103) AS Data,
+        CAST(es.Banco_es AS VARCHAR) AS Banco,
+        es.Conta_es AS Conta
+    FROM EntSaiEmpAplic es
+    LEFT JOIN CategoriasDeTipoDeMovimentacao ctm ON es.Natureza_es = ctm.Codigo_cger
+    WHERE es.Empresa_es IN (1, 3, 4, 5, 6)
+      AND es.Data_es BETWEEN %s AND %s
+    ORDER BY es.Data_es
+    """
+    with get_db() as conn:
+        cur = conn.cursor(as_dict=True)
+        cur.execute(sql, (de, ate))
+        rows = cur.fetchall()
+
+    result = [
+        {
+            "empresa": r["Empresa"] or "",
+            "sentido": "entrada" if r["EntSai_es"] == 1 else "saida",
+            "descricao": (r["Natureza"] or "S/Natureza").strip(),
+            "valor": float(r["Valor_es"] or 0),
+            "data": r["Data"] or "",
+            "banco": str(r["Banco"] or "").strip(),
+            "conta": str(r["Conta"] or "").strip(),
+        }
+        for r in rows
+    ]
+    return [
+        r for r in result
+        if not _is_blocked_banco(r["empresa"], r["banco"])
+        and not _is_blocked_conta(r["empresa"], r["banco"], r["conta"])
+    ]
+
+
 def get_saldo_banco(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[dict]:
     global _SALDO_CONTA_COL
     if _SALDO_CONTA_COL is None:

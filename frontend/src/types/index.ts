@@ -126,6 +126,7 @@ export interface GrupoObras {
   shared_with?: GrupoShareItem[]
   empresas_greedy?: string[]
   periodo_padrao?: { ano_inicio: number; mes_inicio: number; ano_fim: number; mes_fim: number } | null
+  incluir_custo_financeiro?: boolean
 }
 
 export interface UserBasic {
@@ -226,4 +227,26 @@ export interface GrupoTotaisReais {
   updated_at: string
   origens: string[]
   status_rec: string[]
+}
+
+// ── Custo Financeiro (Tesouraria) ────────────────────────────────────────────
+
+export interface CustoFinanceiroSlot {
+  ano: number
+  mes: number
+}
+
+export interface CustoFinanceiroLinha {
+  descricao: string
+  valores: number[]
+  total: number
+}
+
+export interface CustoFinanceiroResponse {
+  meses: CustoFinanceiroSlot[]
+  transferencias: CustoFinanceiroLinha[]
+  controle: CustoFinanceiroLinha[]
+  total_entradas: number
+  total_saidas: number
+  fluxo_liquido: number
 }

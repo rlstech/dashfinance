@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, 
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
+  useCustoFinanceiro,
   useDeleteGrupo,
   useFilterTree,
   useFluxoObrasTodas,
@@ -22,7 +23,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -148,6 +149,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [buscaObra, setBuscaObra] = useState('')
   const [shares, setShares] = useState<GrupoShareItem[]>(initialEditando?.shared_with ?? [])
   const [empresasGreedy, setEmpresasGreedy] = useState<string[]>(initialEditando?.empresas_greedy ?? [])
+  const [incluirCustoFinanceiro, setIncluirCustoFinanceiro] = useState<boolean>(initialEditando?.incluir_custo_financeiro ?? false)
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
@@ -175,7 +177,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setNome(''); setDescricao(''); setObrasSel([])
     setPercentuais({}); setObraEspecial('')
     setEmpresaFiltro(null); setBuscaObra('')
-    setShares([]); setEmpresasGreedy([])
+    setShares([]); setEmpresasGreedy([]); setIncluirCustoFinanceiro(false)
   }
 
   function startCreate() {
@@ -195,6 +197,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setBuscaObra('')
     setShares(g.shared_with ?? [])
     setEmpresasGreedy(g.empresas_greedy ?? [])
+    setIncluirCustoFinanceiro(g.incluir_custo_financeiro ?? false)
     setEditando(g)
   }
 
@@ -214,6 +217,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       obra_especial: obraEspecial || undefined,
       shared_with: shares,
       empresas_greedy: empresasGreedy,
+      incluir_custo_financeiro: incluirCustoFinanceiro,
     }
     if (editando) {
       updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
@@ -485,6 +489,22 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                   </div>
                 </div>
               )}
+
+              {/* Custo Financeiro */}
+              <div className="border-2 border-grid p-3 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="accent-brand flex-shrink-0"
+                    checked={incluirCustoFinanceiro}
+                    onChange={(e) => setIncluirCustoFinanceiro(e.target.checked)}
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-dark">Custo Financeiro</span>
+                </label>
+                <p className="text-[10px] text-muted-foreground">
+                  Exibe ao final do grupo um card de tesouraria consolidado com transferências bancárias e controle financeiro, mês a mês.
+                </p>
+              </div>
 
               {/* Compartilhar com */}
               {otherUsers.length > 0 && (
@@ -1626,6 +1646,129 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
   )
 }
 
+// ── Card Custo Financeiro (Tesouraria) ───────────────────────────────────────
+
+function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const { meses, transferencias, controle, total_entradas, total_saidas, fluxo_liquido } = data
+  const n = meses.length
+
+  const allLinhas = [
+    ...(transferencias.length ? [{ section: 'Transferências Bancárias', linhas: transferencias }] : []),
+    ...(controle.length ? [{ section: 'Controle Financeiro', linhas: controle }] : []),
+  ]
+
+  return (
+    <div className="bg-white block-border overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-brand/5 transition-colors"
+        onClick={() => setCollapsed((v) => !v)}
+      >
+        <div className="flex items-center gap-2">
+          {collapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          <span className="text-xs font-black uppercase tracking-widest text-dark">Custo Financeiro</span>
+          <span className="text-[10px] text-muted-foreground font-normal">— Tesouraria consolidada</span>
+        </div>
+        <div className="flex items-center gap-4 text-xs">
+          <span className="text-green-700 font-bold">Ent: {formatCurrency(total_entradas)}</span>
+          <span className="text-red-700 font-bold">Saí: {formatCurrency(total_saidas)}</span>
+          <span className={cn('font-black', fluxo_liquido >= 0 ? 'text-green-700' : 'text-red-700')}>
+            Fluxo: {formatCurrency(fluxo_liquido)}
+          </span>
+        </div>
+      </button>
+
+      {!collapsed && (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-dark text-white">
+                <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] min-w-[220px] sticky left-0 bg-dark z-10">Descrição</th>
+                {meses.map((s, i) => (
+                  <th key={i} className="px-1 py-1.5 text-right font-bold whitespace-nowrap min-w-[80px]">
+                    {MESES[s.mes - 1]}/{String(s.ano).slice(2)}
+                  </th>
+                ))}
+                <th className="px-1 py-1.5 text-right font-bold border-l-2 border-white/30 min-w-[90px]">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allLinhas.map(({ section, linhas }) => (
+                <>
+                  <tr key={section} className="bg-grid/40">
+                    <td colSpan={n + 2} className="px-3 py-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      {section}
+                    </td>
+                  </tr>
+                  {linhas.map((linha, li) => (
+                    <tr key={`${section}-${li}`} className={li % 2 === 0 ? 'bg-white' : 'bg-grid/20'}>
+                      <td className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate" title={linha.descricao}>
+                        {linha.descricao}
+                      </td>
+                      {linha.valores.map((v, vi) => (
+                        <td key={vi} className="px-1 py-1 text-right tabular-nums">
+                          <span className={cn(v === 0 ? 'text-muted-foreground/30' : v > 0 ? 'text-green-700' : 'text-red-700')}>
+                            {v === 0 ? '—' : formatCurrency(v)}
+                          </span>
+                        </td>
+                      ))}
+                      <td className="px-1 py-1 text-right tabular-nums border-l-2 border-dark">
+                        <span className={cn('font-bold', linha.total === 0 ? 'text-muted-foreground/30' : linha.total > 0 ? 'text-green-700' : 'text-red-700')}>
+                          {linha.total === 0 ? '—' : formatCurrency(linha.total)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              ))}
+
+              {/* Rodapé com totais */}
+              <tr className="bg-dark text-white font-black border-t-2 border-dark">
+                <td className="px-3 py-1.5 sticky left-0 bg-dark text-[10px] uppercase tracking-widest">Total Entradas</td>
+                {Array.from({ length: n }).map((_, i) => {
+                  const v = [...transferencias, ...controle].reduce((s, l) => s + (l.valores[i] > 0 ? l.valores[i] : 0), 0)
+                  return (
+                    <td key={i} className="px-1 py-1.5 text-right tabular-nums text-green-300">
+                      {v === 0 ? '—' : formatCurrency(v)}
+                    </td>
+                  )
+                })}
+                <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30 text-green-300">{formatCurrency(total_entradas)}</td>
+              </tr>
+              <tr className="bg-dark/80 text-white font-black">
+                <td className="px-3 py-1.5 sticky left-0 bg-dark/80 text-[10px] uppercase tracking-widest">Total Saídas</td>
+                {Array.from({ length: n }).map((_, i) => {
+                  const v = [...transferencias, ...controle].reduce((s, l) => s + (l.valores[i] < 0 ? l.valores[i] : 0), 0)
+                  return (
+                    <td key={i} className="px-1 py-1.5 text-right tabular-nums text-red-300">
+                      {v === 0 ? '—' : formatCurrency(v)}
+                    </td>
+                  )
+                })}
+                <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30 text-red-300">{formatCurrency(-total_saidas)}</td>
+              </tr>
+              <tr className="bg-brand text-white font-black text-sm">
+                <td className="px-3 py-2 sticky left-0 bg-brand text-[10px] uppercase tracking-widest">Fluxo do Período</td>
+                {Array.from({ length: n }).map((_, i) => {
+                  const v = [...transferencias, ...controle].reduce((s, l) => s + l.valores[i], 0)
+                  return (
+                    <td key={i} className={cn('px-1 py-2 text-right tabular-nums font-black', v < 0 ? 'text-red-200' : '')}>
+                      {v === 0 ? '—' : formatCurrency(v)}
+                    </td>
+                  )
+                })}
+                <td className={cn('px-1 py-2 text-right tabular-nums border-l-2 border-white/30 font-black', fluxo_liquido < 0 ? 'text-red-200' : '')}>
+                  {formatCurrency(fluxo_liquido)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 
 export default function FluxoObras() {
@@ -1708,6 +1851,8 @@ export default function FluxoObras() {
     [grupos, grupoAtivoId],
   )
 
+  const custoFinanceiroEnabled = !!(grupoAtivoId !== null && grupoAtivo?.incluir_custo_financeiro)
+  const { data: custoFinanceiro } = useCustoFinanceiro(periodo, custoFinanceiroEnabled)
 
   function calcTotaisGrupo(grupo: GrupoObras) {
     const t = totaisPrevMap?.[String(grupo.id)]
@@ -2154,6 +2299,10 @@ export default function FluxoObras() {
 
             {obrasParaRender.length + (obrasGreedy ? 1 : 0) > 1 && (
               <ConsolidadoGrupo obras={obrasParaRender} obrasGreedy={obrasGreedy?.sintetica} projetar={projetarFuturo} />
+            )}
+
+            {custoFinanceiro && (
+              <CustoFinanceiroGrupo data={custoFinanceiro} />
             )}
           </div>
         )}

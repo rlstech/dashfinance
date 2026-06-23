@@ -173,6 +173,7 @@ async def init_tables():
         await conn.execute(_SCHEMA)
         await _migrate_planejamento_per_grupo(conn)
         await _migrate_grupos_periodo_padrao(conn)
+        await _migrate_grupos_custo_financeiro(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
 
 
@@ -234,6 +235,20 @@ async def _migrate_grupos_periodo_padrao(conn):
            ADD COLUMN periodo_mes_fim    INTEGER"""
     )
     log.info("Migração grupos_obras: colunas de período padrão adicionadas")
+
+
+async def _migrate_grupos_custo_financeiro(conn):
+    """One-time: adiciona flag incluir_custo_financeiro em grupos_obras."""
+    col = await conn.fetchval(
+        """SELECT 1 FROM information_schema.columns
+           WHERE table_name='grupos_obras' AND column_name='incluir_custo_financeiro'"""
+    )
+    if col:
+        return
+    await conn.execute(
+        "ALTER TABLE grupos_obras ADD COLUMN incluir_custo_financeiro BOOLEAN DEFAULT FALSE"
+    )
+    log.info("Migração grupos_obras: coluna incluir_custo_financeiro adicionada")
 
 
 def _pool_conn():
@@ -416,14 +431,16 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
         if is_admin:
             grupos = await conn.fetch(
                 """SELECT id, nome, descricao, obra_especial, created_by,
-                          periodo_ano_inicio, periodo_mes_inicio, periodo_ano_fim, periodo_mes_fim
+                          periodo_ano_inicio, periodo_mes_inicio, periodo_ano_fim, periodo_mes_fim,
+                          incluir_custo_financeiro
                    FROM grupos_obras ORDER BY nome"""
             )
         else:
             grupos = await conn.fetch(
                 """SELECT g.id, g.nome, g.descricao, g.obra_especial, g.created_by,
                           g.periodo_ano_inicio, g.periodo_mes_inicio,
-                          g.periodo_ano_fim, g.periodo_mes_fim
+                          g.periodo_ano_fim, g.periodo_mes_fim,
+                          g.incluir_custo_financeiro
                    FROM grupos_obras g
                    WHERE g.created_by = $1
                       OR EXISTS (
@@ -492,6 +509,7 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
                 "ano_fim": g["periodo_ano_fim"],
                 "mes_fim": g["periodo_mes_fim"],
             } if g["periodo_ano_inicio"] is not None else None,
+            "incluir_custo_financeiro": bool(g["incluir_custo_financeiro"] or False),
         }
         for g in grupos
     ]
@@ -545,13 +563,16 @@ async def create_grupo(
     percentuais: dict[str, float], obra_especial: str | None,
     user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
+    incluir_custo_financeiro: bool = False,
 ) -> dict:
     shares = _normalize_shares(shared_with)
     empresas_greedy = empresas_greedy or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
-            "INSERT INTO grupos_obras (nome, descricao, obra_especial, created_by, updated_by) VALUES ($1,$2,$3,$4,$4) RETURNING id",
-            nome, descricao, obra_especial or None, user_id,
+            """INSERT INTO grupos_obras
+               (nome, descricao, obra_especial, created_by, updated_by, incluir_custo_financeiro)
+               VALUES ($1,$2,$3,$4,$4,$5) RETURNING id""",
+            nome, descricao, obra_especial or None, user_id, incluir_custo_financeiro,
         )
         grupo_id = row["id"]
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
@@ -563,6 +584,7 @@ async def create_grupo(
         "percentuais": percentuais, "created_by": user_id,
         "shared_with": shares,
         "empresas_greedy": empresas_greedy,
+        "incluir_custo_financeiro": incluir_custo_financeiro,
     }
 
 
@@ -571,14 +593,16 @@ async def update_grupo(
     percentuais: dict[str, float], obra_especial: str | None,
     user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
+    incluir_custo_financeiro: bool = False,
 ) -> dict | None:
     empresas_greedy = empresas_greedy or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """UPDATE grupos_obras
-               SET nome=$2, descricao=$3, obra_especial=$4, updated_at=NOW(), updated_by=$5
+               SET nome=$2, descricao=$3, obra_especial=$4, updated_at=NOW(), updated_by=$5,
+                   incluir_custo_financeiro=$6
                WHERE id=$1 RETURNING id, created_by""",
-            grupo_id, nome, descricao, obra_especial or None, user_id,
+            grupo_id, nome, descricao, obra_especial or None, user_id, incluir_custo_financeiro,
         )
         if not row:
             return None
@@ -602,6 +626,7 @@ async def update_grupo(
         "percentuais": percentuais, "created_by": row["created_by"],
         "shared_with": new_shares,
         "empresas_greedy": empresas_greedy,
+        "incluir_custo_financeiro": incluir_custo_financeiro,
     }
 
 

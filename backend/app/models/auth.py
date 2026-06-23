@@ -68,6 +68,7 @@ class GrupoObrasIn(BaseModel):
     obra_especial: str | None = None
     shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
+    incluir_custo_financeiro: bool = False
 
 
 class PeriodoPadrao(BaseModel):
@@ -90,6 +91,7 @@ class GrupoObrasOut(BaseModel):
     shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
     periodo_padrao: PeriodoPadrao | None = None
+    incluir_custo_financeiro: bool = False
 
 
 class UserBasic(BaseModel):

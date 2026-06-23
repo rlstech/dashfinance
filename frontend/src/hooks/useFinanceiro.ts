@@ -4,7 +4,7 @@ import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
-  UserBasic,
+  UserBasic, CustoFinanceiroResponse,
 } from '@/types'
 
 export function useAP() {
@@ -237,6 +237,20 @@ export function useGruposTotaisReais(ano: number) {
     queryKey: ['grupos-totais-reais', ano],
     queryFn: () => api.get('/fluxo-obras/grupos-totais-reais', { ano }),
     staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function useCustoFinanceiro(periodo: Periodo, enabled: boolean) {
+  return useQuery<CustoFinanceiroResponse>({
+    queryKey: ['custo-financeiro', periodo],
+    enabled,
+    staleTime: 1000 * 60 * 5,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro', {
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
   })
 }
 
