@@ -587,6 +587,7 @@ async def get_custo_financeiro(
         linhas = [
             CustoFinanceiroLinha(descricao=desc, valores=vals, total=sum(vals))
             for desc, vals in by_desc.items()
+            if any(v != 0 for v in vals)
         ]
         linhas.sort(key=lambda l: abs(l.total), reverse=True)
         return linhas
