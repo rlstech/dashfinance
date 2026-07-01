@@ -348,7 +348,7 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
 
 
 def get_controle_financeiro(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[dict]:
-    """Controle financeiro (EntSaiEmpAplic). EntSai_es: 0=Saída, 1=Entrada."""
+    """Controle financeiro (EntSaiEmpAplic). EntSai_es: 0=Entrada, 1=Saída."""
     sql = """
     SELECT
         CASE es.Empresa_es
@@ -376,7 +376,7 @@ def get_controle_financeiro(de: str = "2020-01-01", ate: str = "2030-12-31") -> 
     result = [
         {
             "empresa": r["Empresa"] or "",
-            "sentido": "entrada" if r["EntSai_es"] == 1 else "saida",
+            "sentido": "entrada" if r["EntSai_es"] == 0 else "saida",
             "descricao": (r["Natureza"] or "S/Natureza").strip(),
             "valor": float(r["Valor_es"] or 0),
             "data": r["Data"] or "",
