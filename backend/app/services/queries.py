@@ -369,6 +369,14 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
         suprimir_saida = deb_e_mutuo and not cred_e_mutuo
         suprimir_entrada = cred_e_mutuo and not deb_e_mutuo
 
+        # Transferência comum (sem conta de mútuo envolvida) entre contas da mesma empresa é
+        # puramente interna — não representa entrada/saída real de caixa da empresa, então não
+        # aparece no Custo Financeiro. Entre empresas diferentes ela continua aparecendo (as duas
+        # pernas), pois é um fluxo real entre as entidades analisadas.
+        if not deb_e_mutuo and not cred_e_mutuo and emp_deb and emp_deb == emp_cred:
+            suprimir_saida = True
+            suprimir_entrada = True
+
         if emp_deb and not suprimir_saida:
             key = ("transferencia", emp_deb, banco_deb, conta_deb, data, valor, descricao, "saida")
             seen[key] = seen.get(key, 0) + 1
