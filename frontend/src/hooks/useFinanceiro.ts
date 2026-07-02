@@ -271,6 +271,7 @@ function invalidateCustoFinanceiro(queryClient: ReturnType<typeof useQueryClient
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricoes'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricao-lancamentos'], refetchType: 'all' })
 }
 
 export function useCreateCustoFinanceiroCategoria() {

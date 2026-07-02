@@ -1736,7 +1736,7 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
 
 function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceiroResponse; grupoId: number; periodo: Periodo }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [detalhe, setDetalhe] = useState<{ id: number; nome: string } | null>(null)
+  const [detalhe, setDetalhe] = useState<{ id: number; nome: string; ano?: number; mes?: number } | null>(null)
   const [gerenciarAberto, setGerenciarAberto] = useState(false)
   const currentUser = useAuthStore((s) => s.user)
   const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
@@ -1789,11 +1789,13 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
               {categorias.map((cat, ci) => (
                 <tr
                   key={cat.categoria_id ?? 'nc'}
-                  className={cn('cursor-pointer hover:bg-brand/10', ci % 2 === 0 ? 'bg-white' : 'bg-grid/20')}
-                  onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
-                  title="Clique para ver os lançamentos"
+                  className={ci % 2 === 0 ? 'bg-white' : 'bg-grid/20'}
                 >
-                  <td className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate">
+                  <td
+                    className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate cursor-pointer hover:bg-brand/10"
+                    onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
+                    title="Clique para ver todos os lançamentos do período"
+                  >
                     {cat.sinal && (
                       <span className={cat.sinal === 'entrada' ? 'text-green-700' : 'text-red-700'}>
                         {cat.sinal === 'entrada' ? '(+) ' : '(-) '}
@@ -1802,13 +1804,25 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
                     {cat.nome}
                   </td>
                   {cat.valores.map((v, vi) => (
-                    <td key={vi} className="px-1 py-1 text-right tabular-nums">
+                    <td
+                      key={vi}
+                      className="px-1 py-1 text-right tabular-nums cursor-pointer hover:bg-brand/10"
+                      onClick={() => setDetalhe({
+                        id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome,
+                        ano: meses[vi].ano, mes: meses[vi].mes,
+                      })}
+                      title={`Clique para ver os lançamentos de ${MESES[meses[vi].mes - 1]}/${meses[vi].ano}`}
+                    >
                       <span className={cn(v === 0 ? 'text-muted-foreground/30' : v > 0 ? 'text-green-700' : 'text-red-700')}>
                         {v === 0 ? '—' : formatCurrency(v)}
                       </span>
                     </td>
                   ))}
-                  <td className="px-1 py-1 text-right tabular-nums border-l-2 border-dark">
+                  <td
+                    className="px-1 py-1 text-right tabular-nums border-l-2 border-dark cursor-pointer hover:bg-brand/10"
+                    onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
+                    title="Clique para ver todos os lançamentos do período"
+                  >
                     <span className={cn('font-bold', cat.total === 0 ? 'text-muted-foreground/30' : cat.total > 0 ? 'text-green-700' : 'text-red-700')}>
                       {cat.total === 0 ? '—' : formatCurrency(cat.total)}
                     </span>
@@ -1870,9 +1884,14 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
       {detalhe && (
         <LancamentosModal
           grupoId={grupoId}
-          periodo={periodo}
+          periodo={
+            detalhe.ano && detalhe.mes
+              ? { anoInicio: detalhe.ano, mesInicio: detalhe.mes, anoFim: detalhe.ano, mesFim: detalhe.mes }
+              : periodo
+          }
           categoriaId={detalhe.id}
           categoriaNome={detalhe.nome}
+          mesLabel={detalhe.ano && detalhe.mes ? `${MESES[detalhe.mes - 1]}/${detalhe.ano}` : null}
           isAdmin={!!currentUser?.is_admin}
           onClose={() => setDetalhe(null)}
         />
@@ -1967,12 +1986,13 @@ function LancamentosTable({
 // ── Modal: detalhamento de lançamentos de uma categoria ─────────────────────
 
 function LancamentosModal({
-  grupoId, periodo, categoriaId, categoriaNome, isAdmin, onClose,
+  grupoId, periodo, categoriaId, categoriaNome, mesLabel, isAdmin, onClose,
 }: {
   grupoId: number
   periodo: Periodo
   categoriaId: number
   categoriaNome: string
+  mesLabel: string | null
   isAdmin: boolean
   onClose: () => void
 }) {
@@ -1984,14 +2004,16 @@ function LancamentosModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
-          <span className="text-xs font-black uppercase tracking-widest text-dark">{categoriaNome} — Lançamentos</span>
+          <span className="text-xs font-black uppercase tracking-widest text-dark">
+            {categoriaNome} — Lançamentos{mesLabel ? ` (${mesLabel})` : ' (período completo)'}
+          </span>
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
         </div>
         <div className="overflow-auto flex-1">
           <LancamentosTable
             lancamentos={lancamentos}
             isLoading={isLoading}
-            emptyMessage="Nenhum lançamento nesta categoria no período selecionado."
+            emptyMessage={mesLabel ? `Nenhum lançamento nesta categoria em ${mesLabel}.` : 'Nenhum lançamento nesta categoria no período selecionado.'}
             categorias={categorias}
             isAdmin={isAdmin}
             onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
