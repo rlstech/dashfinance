@@ -1952,6 +1952,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const [descSel, setDescSel] = useState<CategoriaDescricaoItem[]>([])
   const [busca, setBusca] = useState('')
   const [apenasNaoClassificadas, setApenasNaoClassificadas] = useState(false)
+  const [filtroSentido, setFiltroSentido] = useState<'todos' | 'entrada' | 'saida' | 'mista'>('todos')
 
   const isPending = createCategoria.isPending || updateCategoria.isPending
 
@@ -1959,10 +1960,11 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     const termo = busca.trim().toLowerCase()
     return descricoes.filter((d) => {
       if (apenasNaoClassificadas && d.categoria_id != null) return false
+      if (filtroSentido !== 'todos' && d.sentido !== filtroSentido) return false
       if (termo && !d.descricao.toLowerCase().includes(termo)) return false
       return true
     })
-  }, [descricoes, busca, apenasNaoClassificadas])
+  }, [descricoes, busca, apenasNaoClassificadas, filtroSentido])
 
   function marcarTodosVisiveis() {
     setDescSel((prev) => {
@@ -1990,6 +1992,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setDescSel([])
     setBusca('')
     setApenasNaoClassificadas(false)
+    setFiltroSentido('todos')
   }
 
   function startEdit(c: CustoFinanceiroCategoria) {
@@ -2001,6 +2004,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setDescSel(c.descricoes)
     setBusca('')
     setApenasNaoClassificadas(false)
+    setFiltroSentido('todos')
   }
 
   function cancelForm() {
@@ -2123,6 +2127,16 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                       onChange={(e) => setBusca(e.target.value)}
                     />
                   </div>
+                  <select
+                    className="text-[10px] font-bold border-2 border-grid px-1.5 py-1.5 bg-white focus:outline-none focus:border-brand flex-shrink-0"
+                    value={filtroSentido}
+                    onChange={(e) => setFiltroSentido(e.target.value as typeof filtroSentido)}
+                  >
+                    <option value="todos">Todos os sinais</option>
+                    <option value="entrada">(+) Entrada</option>
+                    <option value="saida">(-) Saída</option>
+                    <option value="mista">± Mista</option>
+                  </select>
                   <label className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground cursor-pointer select-none whitespace-nowrap">
                     <input
                       type="checkbox"
@@ -2133,6 +2147,9 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                     Só não classificadas
                   </label>
                 </div>
+                <p className="text-[9px] text-muted-foreground pb-2">
+                  O sinal mostrado é o observado nos lançamentos: (+) só entrada, (-) só saída, ± quando a mesma descrição já apareceu nos dois sentidos.
+                </p>
 
                 <div className="flex items-center justify-between pb-1">
                   <span className="text-[10px] text-muted-foreground">
@@ -2167,6 +2184,15 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                     return (
                       <label key={`${d.tipo}-${d.descricao}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
                         <input type="checkbox" className="accent-brand flex-shrink-0" checked={checked} onChange={() => toggleDesc(d)} />
+                        <span
+                          className={cn(
+                            'text-[10px] font-black w-4 flex-shrink-0 text-center',
+                            d.sentido === 'entrada' ? 'text-green-700' : d.sentido === 'saida' ? 'text-red-700' : 'text-amber-600',
+                          )}
+                          title={d.sentido === 'entrada' ? 'Só entrada' : d.sentido === 'saida' ? 'Só saída' : 'Sinal misto'}
+                        >
+                          {d.sentido === 'entrada' ? '+' : d.sentido === 'saida' ? '-' : '±'}
+                        </span>
                         <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0">
                           {d.tipo === 'transferencia' ? 'Transferência' : 'Controle Fin.'}
                         </span>

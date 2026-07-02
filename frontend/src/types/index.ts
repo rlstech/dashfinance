@@ -290,4 +290,5 @@ export interface DescricaoDisponivel {
   tipo: 'transferencia' | 'controle'
   descricao: string
   categoria_id: number | null
+  sentido: 'entrada' | 'saida' | 'mista'
 }

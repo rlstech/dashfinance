@@ -694,8 +694,9 @@ async def set_custo_financeiro_lancamento_categoria(
 
 @router.get("/custo-financeiro/descricoes", response_model=list[DescricaoDisponivel])
 async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)):
-    """Lista as descrições/naturezas distintas presentes nos dados, com a categoria já atribuída (se houver).
-    Usado para montar a UI de gerenciamento de categorias."""
+    """Lista as descrições/naturezas distintas presentes nos dados, com a categoria já atribuída (se houver)
+    e o sinal observado nos lançamentos (entrada, saída ou mista). Usado para montar a UI de gerenciamento
+    de categorias e orientar o usuário sobre a que sinal cada descrição costuma pertencer."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
     controle_raw: list[dict] = await get_cached("dash:controle:all") or []
 
@@ -705,14 +706,17 @@ async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)
         for d in cat["descricoes"]:
             regra_map[(d["tipo"], d["descricao"])] = cat["id"]
 
-    vistos: set[tuple[str, str]] = set()
-    out: list[DescricaoDisponivel] = []
+    sentidos_por_desc: dict[tuple[str, str], set[str]] = {}
     for item in transf_raw + controle_raw:
         key = (item["tipo"], item["descricao"])
-        if key in vistos:
-            continue
-        vistos.add(key)
-        out.append(DescricaoDisponivel(tipo=key[0], descricao=key[1], categoria_id=regra_map.get(key)))
+        sentidos_por_desc.setdefault(key, set()).add(item["sentido"])
+
+    out: list[DescricaoDisponivel] = []
+    for key, sentidos in sentidos_por_desc.items():
+        sentido = sentidos.pop() if len(sentidos) == 1 else "mista"
+        out.append(DescricaoDisponivel(
+            tipo=key[0], descricao=key[1], categoria_id=regra_map.get(key), sentido=sentido,
+        ))
     out.sort(key=lambda d: (d.tipo, d.descricao))
     return out
 

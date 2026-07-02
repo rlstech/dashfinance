@@ -228,3 +228,4 @@ class DescricaoDisponivel(BaseModel):
     tipo: str
     descricao: str
     categoria_id: int | None = None
+    sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa descrição
