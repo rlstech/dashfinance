@@ -9,7 +9,9 @@ from app.services.database import get_db
 
 EMPRESA_MAP = {1: "COMBRASEN", 3: "DRESDEN", 4: "TRUST", 5: "GAMA 01", 6: "CONSÓRCIO HMSJ"}
 
-# Bancos a excluir por empresa (Receitas, AP e Saldo Bancário).
+# Bancos a excluir por empresa. Usado em Receitas, AP e Saldo Bancário — NÃO se aplica a
+# Transferências Bancárias/Controle Financeiro (tesouraria), que têm seu próprio filtro de
+# contas configurável por grupo em Custo Financeiro.
 BLOCKED_BANCOS: dict[str, set[str]] = {
     "COMBRASEN": {"-1", "8", "196", "199", "755", "997", "998", "999"},
     "GAMA 01": {"-1", "998"},
@@ -18,7 +20,7 @@ BLOCKED_BANCOS: dict[str, set[str]] = {
     "CONSÓRCIO HMSJ": {"-1"},
 }
 
-# Contas específicas a excluir por empresa → banco → set de contas.
+# Contas específicas a excluir por empresa → banco → set de contas (mesmo escopo do comentário acima).
 BLOCKED_CONTAS: dict[str, dict[str, set[str]]] = {
     "COMBRASEN": {
         "341": {"14632-6", "19721-2", "01557-3", "30333-1"},
@@ -339,7 +341,7 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
         origem = {"empresa": emp_deb, "banco": banco_deb, "conta": conta_deb}
         destino = {"empresa": emp_cred, "banco": banco_cred, "conta": conta_cred}
 
-        if emp_deb and not _is_blocked_banco(emp_deb, banco_deb) and not _is_blocked_conta(emp_deb, banco_deb, conta_deb):
+        if emp_deb:
             key = ("transferencia", emp_deb, banco_deb, conta_deb, data, valor, descricao, "saida")
             seen[key] = seen.get(key, 0) + 1
             result.append({
@@ -356,7 +358,7 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
                 "destino": destino,
             })
 
-        if emp_cred and not _is_blocked_banco(emp_cred, banco_cred) and not _is_blocked_conta(emp_cred, banco_cred, conta_cred):
+        if emp_cred:
             key = ("transferencia", emp_cred, banco_cred, conta_cred, data, valor, descricao, "entrada")
             seen[key] = seen.get(key, 0) + 1
             result.append({
@@ -407,8 +409,6 @@ def get_controle_financeiro(de: str = "2020-01-01", ate: str = "2030-12-31") -> 
         empresa = r["Empresa"] or ""
         banco = str(r["Banco"] or "").strip()
         conta = str(r["Conta"] or "").strip()
-        if _is_blocked_banco(empresa, banco) or _is_blocked_conta(empresa, banco, conta):
-            continue
         sentido = "entrada" if r["EntSai_es"] == 0 else "saida"
         descricao = (r["Natureza"] or "S/Natureza").strip()
         valor = float(r["Valor_es"] or 0)
