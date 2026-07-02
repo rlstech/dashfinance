@@ -237,17 +237,57 @@ export interface CustoFinanceiroSlot {
   mes: number
 }
 
-export interface CustoFinanceiroLinha {
+export interface CategoriaDescricaoItem {
+  tipo: 'transferencia' | 'controle'
   descricao: string
+}
+
+export interface CustoFinanceiroCategoria {
+  id: number
+  nome: string
+  sinal: 'entrada' | 'saida'
+  ordem: number
+  descricoes: CategoriaDescricaoItem[]
+}
+
+export interface CustoFinanceiroCategoriaLinha {
+  categoria_id: number | null
+  nome: string
+  sinal: 'entrada' | 'saida' | null
   valores: number[]
   total: number
 }
 
 export interface CustoFinanceiroResponse {
   meses: CustoFinanceiroSlot[]
-  transferencias: CustoFinanceiroLinha[]
-  controle: CustoFinanceiroLinha[]
+  categorias: CustoFinanceiroCategoriaLinha[]
   total_entradas: number
   total_saidas: number
   fluxo_liquido: number
+}
+
+export interface LancamentoConta {
+  empresa: string
+  banco: string
+  conta: string
+}
+
+export interface LancamentoDetalhe {
+  id: string
+  tipo: 'transferencia' | 'controle'
+  data: string
+  descricao: string
+  valor: number
+  sentido: 'entrada' | 'saida'
+  origem: LancamentoConta | null
+  destino: LancamentoConta | null
+  banco: string
+  conta: string
+  categoria_id: number | null
+}
+
+export interface DescricaoDisponivel {
+  tipo: 'transferencia' | 'controle'
+  descricao: string
+  categoria_id: number | null
 }

@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, RefreshCw, Search, Share2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
+  useCreateCustoFinanceiroCategoria,
   useCustoFinanceiro,
+  useCustoFinanceiroCategorias,
+  useCustoFinanceiroDescricoes,
+  useCustoFinanceiroLancamentos,
+  useDeleteCustoFinanceiroCategoria,
   useDeleteGrupo,
   useFilterTree,
   useFluxoObrasTodas,
@@ -14,6 +19,8 @@ import {
   useObraLogs,
   useSaveObraPlanejamento,
   useSavePeriodoGrupo,
+  useSetLancamentoCategoria,
+  useUpdateCustoFinanceiroCategoria,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
@@ -23,8 +30,10 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, DescricaoDisponivel } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
+
+const CATEGORIA_NAO_CLASSIFICADA = 0
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -1684,15 +1693,13 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
 
 // ── Card Custo Financeiro (Tesouraria) ───────────────────────────────────────
 
-function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
+function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceiroResponse; grupoId: number; periodo: Periodo }) {
   const [collapsed, setCollapsed] = useState(false)
-  const { meses, transferencias, controle, total_entradas, total_saidas, fluxo_liquido } = data
+  const [detalhe, setDetalhe] = useState<{ id: number; nome: string } | null>(null)
+  const [gerenciarAberto, setGerenciarAberto] = useState(false)
+  const currentUser = useAuthStore((s) => s.user)
+  const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
   const n = meses.length
-
-  const allLinhas = [
-    ...(transferencias.length ? [{ section: 'Transferências Bancárias', linhas: transferencias }] : []),
-    ...(controle.length ? [{ section: 'Controle Financeiro', linhas: controle }] : []),
-  ]
 
   return (
     <div className="bg-white block-border overflow-hidden">
@@ -1706,6 +1713,15 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
           <span className="text-[10px] text-muted-foreground font-normal">— Tesouraria consolidada</span>
         </div>
         <div className="flex items-center gap-4 text-xs">
+          {currentUser?.is_admin && (
+            <span
+              role="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-brand"
+              onClick={(e) => { e.stopPropagation(); setGerenciarAberto(true) }}
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Categorias
+            </span>
+          )}
           <span className="text-green-700 font-bold">Ent: {formatCurrency(total_entradas)}</span>
           <span className="text-red-700 font-bold">Saí: {formatCurrency(total_saidas)}</span>
           <span className={cn('font-black', fluxo_liquido >= 0 ? 'text-green-700' : 'text-red-700')}>
@@ -1719,7 +1735,7 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-dark text-white">
-                <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] min-w-[220px] sticky left-0 bg-dark z-10">Descrição</th>
+                <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] min-w-[220px] sticky left-0 bg-dark z-10">Categoria</th>
                 {meses.map((s, i) => (
                   <th key={i} className="px-1 py-1.5 text-right font-bold whitespace-nowrap min-w-[80px]">
                     {MESES[s.mes - 1]}/{String(s.ano).slice(2)}
@@ -1729,40 +1745,48 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
               </tr>
             </thead>
             <tbody>
-              {allLinhas.map(({ section, linhas }) => (
-                <>
-                  <tr key={section} className="bg-grid/40">
-                    <td colSpan={n + 2} className="px-3 py-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                      {section}
+              {categorias.map((cat, ci) => (
+                <tr
+                  key={cat.categoria_id ?? 'nc'}
+                  className={cn('cursor-pointer hover:bg-brand/10', ci % 2 === 0 ? 'bg-white' : 'bg-grid/20')}
+                  onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
+                  title="Clique para ver os lançamentos"
+                >
+                  <td className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate">
+                    {cat.sinal && (
+                      <span className={cat.sinal === 'entrada' ? 'text-green-700' : 'text-red-700'}>
+                        {cat.sinal === 'entrada' ? '(+) ' : '(-) '}
+                      </span>
+                    )}
+                    {cat.nome}
+                  </td>
+                  {cat.valores.map((v, vi) => (
+                    <td key={vi} className="px-1 py-1 text-right tabular-nums">
+                      <span className={cn(v === 0 ? 'text-muted-foreground/30' : v > 0 ? 'text-green-700' : 'text-red-700')}>
+                        {v === 0 ? '—' : formatCurrency(v)}
+                      </span>
                     </td>
-                  </tr>
-                  {linhas.map((linha, li) => (
-                    <tr key={`${section}-${li}`} className={li % 2 === 0 ? 'bg-white' : 'bg-grid/20'}>
-                      <td className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate" title={linha.descricao}>
-                        {linha.descricao}
-                      </td>
-                      {linha.valores.map((v, vi) => (
-                        <td key={vi} className="px-1 py-1 text-right tabular-nums">
-                          <span className={cn(v === 0 ? 'text-muted-foreground/30' : v > 0 ? 'text-green-700' : 'text-red-700')}>
-                            {v === 0 ? '—' : formatCurrency(v)}
-                          </span>
-                        </td>
-                      ))}
-                      <td className="px-1 py-1 text-right tabular-nums border-l-2 border-dark">
-                        <span className={cn('font-bold', linha.total === 0 ? 'text-muted-foreground/30' : linha.total > 0 ? 'text-green-700' : 'text-red-700')}>
-                          {linha.total === 0 ? '—' : formatCurrency(linha.total)}
-                        </span>
-                      </td>
-                    </tr>
                   ))}
-                </>
+                  <td className="px-1 py-1 text-right tabular-nums border-l-2 border-dark">
+                    <span className={cn('font-bold', cat.total === 0 ? 'text-muted-foreground/30' : cat.total > 0 ? 'text-green-700' : 'text-red-700')}>
+                      {cat.total === 0 ? '—' : formatCurrency(cat.total)}
+                    </span>
+                  </td>
+                </tr>
               ))}
+              {categorias.length === 0 && (
+                <tr>
+                  <td colSpan={n + 2} className="px-3 py-4 text-center text-muted-foreground">
+                    Nenhum lançamento classificado neste período.
+                  </td>
+                </tr>
+              )}
 
               {/* Rodapé com totais */}
               <tr className="bg-dark text-white font-black border-t-2 border-dark">
                 <td className="px-3 py-1.5 sticky left-0 bg-dark text-[10px] uppercase tracking-widest">Total Entradas</td>
                 {Array.from({ length: n }).map((_, i) => {
-                  const v = [...transferencias, ...controle].reduce((s, l) => s + (l.valores[i] > 0 ? l.valores[i] : 0), 0)
+                  const v = categorias.reduce((s, c) => s + (c.valores[i] > 0 ? c.valores[i] : 0), 0)
                   return (
                     <td key={i} className="px-1 py-1.5 text-right tabular-nums text-green-300">
                       {v === 0 ? '—' : formatCurrency(v)}
@@ -1774,7 +1798,7 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
               <tr className="bg-dark/80 text-white font-black">
                 <td className="px-3 py-1.5 sticky left-0 bg-dark/80 text-[10px] uppercase tracking-widest">Total Saídas</td>
                 {Array.from({ length: n }).map((_, i) => {
-                  const v = [...transferencias, ...controle].reduce((s, l) => s + (l.valores[i] < 0 ? l.valores[i] : 0), 0)
+                  const v = categorias.reduce((s, c) => s + (c.valores[i] < 0 ? c.valores[i] : 0), 0)
                   return (
                     <td key={i} className="px-1 py-1.5 text-right tabular-nums text-red-300">
                       {v === 0 ? '—' : formatCurrency(v)}
@@ -1786,7 +1810,7 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
               <tr className="bg-brand text-white font-black text-sm">
                 <td className="px-3 py-2 sticky left-0 bg-brand text-[10px] uppercase tracking-widest">Fluxo do Período</td>
                 {Array.from({ length: n }).map((_, i) => {
-                  const v = [...transferencias, ...controle].reduce((s, l) => s + l.valores[i], 0)
+                  const v = categorias.reduce((s, c) => s + c.valores[i], 0)
                   return (
                     <td key={i} className={cn('px-1 py-2 text-right tabular-nums font-black', v < 0 ? 'text-red-200' : '')}>
                       {v === 0 ? '—' : formatCurrency(v)}
@@ -1801,6 +1825,302 @@ function CustoFinanceiroGrupo({ data }: { data: CustoFinanceiroResponse }) {
           </table>
         </div>
       )}
+
+      {detalhe && (
+        <LancamentosModal
+          grupoId={grupoId}
+          periodo={periodo}
+          categoriaId={detalhe.id}
+          categoriaNome={detalhe.nome}
+          isAdmin={!!currentUser?.is_admin}
+          onClose={() => setDetalhe(null)}
+        />
+      )}
+
+      {gerenciarAberto && (
+        <CategoriasCustoFinanceiroModal onClose={() => setGerenciarAberto(false)} />
+      )}
+    </div>
+  )
+}
+
+// ── Modal: detalhamento de lançamentos de uma categoria ─────────────────────
+
+function LancamentosModal({
+  grupoId, periodo, categoriaId, categoriaNome, isAdmin, onClose,
+}: {
+  grupoId: number
+  periodo: Periodo
+  categoriaId: number
+  categoriaNome: string
+  isAdmin: boolean
+  onClose: () => void
+}) {
+  const { data: lancamentos = [], isLoading } = useCustoFinanceiroLancamentos(grupoId, categoriaId, periodo, true)
+  const { data: categorias = [] } = useCustoFinanceiroCategorias()
+  const setCategoria = useSetLancamentoCategoria()
+
+  function fmtConta(c: { empresa: string; banco: string; conta: string } | null): string {
+    if (!c) return '—'
+    return [c.empresa, [c.banco, c.conta].filter(Boolean).join('/')].filter(Boolean).join(' — ')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
+          <span className="text-xs font-black uppercase tracking-widest text-dark">{categoriaNome} — Lançamentos</span>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
+        </div>
+        <div className="overflow-auto flex-1">
+          {isLoading ? (
+            <div className="p-4 space-y-2">
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-6 w-full" />
+            </div>
+          ) : lancamentos.length === 0 ? (
+            <p className="p-4 text-xs text-muted-foreground">Nenhum lançamento nesta categoria no período selecionado.</p>
+          ) : (
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-dark text-white sticky top-0 z-10">
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] whitespace-nowrap">Data</th>
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Descrição</th>
+                  <th className="text-right px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Valor</th>
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Origem</th>
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Destino</th>
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Banco</th>
+                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Conta</th>
+                  {isAdmin && <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Categoria</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {lancamentos.map((lc, i) => (
+                  <tr key={lc.id} className={i % 2 === 0 ? 'bg-white' : 'bg-grid/20'}>
+                    <td className="px-3 py-1 whitespace-nowrap">{lc.data}</td>
+                    <td className="px-3 py-1 max-w-[240px] truncate" title={lc.descricao}>{lc.descricao}</td>
+                    <td className={cn('px-3 py-1 text-right tabular-nums font-medium whitespace-nowrap', lc.sentido === 'entrada' ? 'text-green-700' : 'text-red-700')}>
+                      {lc.sentido === 'entrada' ? '+' : '-'}{formatCurrency(lc.valor)}
+                    </td>
+                    <td className="px-3 py-1 whitespace-nowrap">{fmtConta(lc.origem)}</td>
+                    <td className="px-3 py-1 whitespace-nowrap">{fmtConta(lc.destino)}</td>
+                    <td className="px-3 py-1 whitespace-nowrap">{lc.banco || '—'}</td>
+                    <td className="px-3 py-1 whitespace-nowrap">{lc.conta || '—'}</td>
+                    {isAdmin && (
+                      <td className="px-3 py-1">
+                        <select
+                          className="text-[10px] border-2 border-grid px-1 py-0.5 bg-white focus:outline-none focus:border-brand"
+                          value={lc.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA}
+                          onChange={(e) => {
+                            const v = Number(e.target.value)
+                            setCategoria.mutate({ lancamentoId: lc.id, categoriaId: v === CATEGORIA_NAO_CLASSIFICADA ? null : v })
+                          }}
+                        >
+                          <option value={CATEGORIA_NAO_CLASSIFICADA}>Não Classificado</option>
+                          {categorias.map((c) => (
+                            <option key={c.id} value={c.id}>{c.nome}</option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal: gerenciar categorias de Custo Financeiro (admin) ─────────────────
+
+function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
+  const { data: categorias = [] } = useCustoFinanceiroCategorias()
+  const { data: descricoes = [] } = useCustoFinanceiroDescricoes(true)
+  const createCategoria = useCreateCustoFinanceiroCategoria()
+  const updateCategoria = useUpdateCustoFinanceiroCategoria()
+  const deleteCategoria = useDeleteCustoFinanceiroCategoria()
+
+  const [editando, setEditando] = useState<CustoFinanceiroCategoria | null>(null)
+  const [criando, setCriando] = useState(false)
+  const [nome, setNome] = useState('')
+  const [sinal, setSinal] = useState<'entrada' | 'saida'>('saida')
+  const [ordem, setOrdem] = useState(0)
+  const [descSel, setDescSel] = useState<CategoriaDescricaoItem[]>([])
+
+  const isPending = createCategoria.isPending || updateCategoria.isPending
+
+  function startCreate() {
+    setEditando(null)
+    setCriando(true)
+    setNome('')
+    setSinal('saida')
+    setOrdem((categorias.length + 1) * 10)
+    setDescSel([])
+  }
+
+  function startEdit(c: CustoFinanceiroCategoria) {
+    setCriando(false)
+    setEditando(c)
+    setNome(c.nome)
+    setSinal(c.sinal)
+    setOrdem(c.ordem)
+    setDescSel(c.descricoes)
+  }
+
+  function cancelForm() {
+    setCriando(false)
+    setEditando(null)
+  }
+
+  function save() {
+    if (!nome.trim()) return
+    const payload = { nome: nome.trim(), sinal, ordem, descricoes: descSel }
+    if (editando) {
+      updateCategoria.mutate({ id: editando.id, ...payload }, { onSuccess: cancelForm })
+    } else {
+      createCategoria.mutate(payload, { onSuccess: cancelForm })
+    }
+  }
+
+  function handleDelete(c: CustoFinanceiroCategoria) {
+    if (!confirm(`Excluir a categoria "${c.nome}"? Os lançamentos dela voltam para "Não Classificado".`)) return
+    deleteCategoria.mutate(c.id)
+  }
+
+  function toggleDesc(item: DescricaoDisponivel) {
+    setDescSel((prev) => {
+      const exists = prev.some((d) => d.tipo === item.tipo && d.descricao === item.descricao)
+      if (exists) return prev.filter((d) => !(d.tipo === item.tipo && d.descricao === item.descricao))
+      return [...prev, { tipo: item.tipo, descricao: item.descricao }]
+    })
+  }
+
+  const showForm = criando || !!editando
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white block-border max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
+          <span className="text-xs font-black uppercase tracking-widest text-dark">Categorias de Custo Financeiro</span>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
+        </div>
+
+        <div className="overflow-auto flex-1 p-4 space-y-4">
+          {!showForm && (
+            <>
+              <button
+                className="flex items-center gap-1.5 text-xs font-bold text-brand hover:underline"
+                onClick={startCreate}
+              >
+                <Plus className="h-3.5 w-3.5" /> Nova categoria
+              </button>
+              <div className="border-2 border-grid divide-y-2 divide-grid">
+                {categorias.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={c.sinal === 'entrada' ? 'text-green-700' : 'text-red-700'}>
+                        {c.sinal === 'entrada' ? '(+)' : '(-)'}
+                      </span>
+                      <span className="font-medium text-dark truncate">{c.nome}</span>
+                      <span className="text-muted-foreground flex-shrink-0">({c.descricoes.length} descrições)</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => startEdit(c)}><Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-brand" /></button>
+                      <button onClick={() => handleDelete(c)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-600" /></button>
+                    </div>
+                  </div>
+                ))}
+                {categorias.length === 0 && (
+                  <p className="px-3 py-4 text-xs text-muted-foreground">Nenhuma categoria cadastrada.</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {showForm && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Nome</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Sinal</label>
+                  <select
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={sinal}
+                    onChange={(e) => setSinal(e.target.value as 'entrada' | 'saida')}
+                  >
+                    <option value="entrada">(+) Entrada</option>
+                    <option value="saida">(-) Saída</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Ordem</label>
+                  <input
+                    type="number"
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={ordem}
+                    onChange={(e) => setOrdem(Number(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-dark">Descrições incluídas nesta categoria</label>
+                <p className="text-[10px] text-muted-foreground pb-1">
+                  Marcar uma descrição já usada em outra categoria a transfere para esta.
+                </p>
+                <div className="border-2 border-grid max-h-64 overflow-auto divide-y divide-grid/50">
+                  {descricoes.map((d) => {
+                    const checked = descSel.some((s) => s.tipo === d.tipo && s.descricao === d.descricao)
+                    const outraCategoria = !checked && d.categoria_id != null
+                      ? categorias.find((c) => c.id === d.categoria_id)
+                      : null
+                    return (
+                      <label key={`${d.tipo}-${d.descricao}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
+                        <input type="checkbox" className="accent-brand flex-shrink-0" checked={checked} onChange={() => toggleDesc(d)} />
+                        <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0">
+                          {d.tipo === 'transferencia' ? 'Transferência' : 'Controle Fin.'}
+                        </span>
+                        <span className="truncate flex-1">{d.descricao}</span>
+                        {outraCategoria && (
+                          <span className="text-[9px] text-muted-foreground flex-shrink-0">em: {outraCategoria.nome}</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                  {descricoes.length === 0 && (
+                    <p className="px-2 py-3 text-xs text-muted-foreground">Nenhuma descrição disponível ainda.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  className="text-xs font-bold bg-brand text-white px-3 py-1.5 hover:bg-brand/90 disabled:opacity-50"
+                  onClick={save}
+                  disabled={!nome.trim() || isPending}
+                >
+                  Salvar
+                </button>
+                <button className="text-xs font-bold text-muted-foreground px-3 py-1.5 hover:text-dark" onClick={cancelForm}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -2338,7 +2658,7 @@ export default function FluxoObras() {
             )}
 
             {custoFinanceiro && (
-              <CustoFinanceiroGrupo data={custoFinanceiro} />
+              <CustoFinanceiroGrupo data={custoFinanceiro} grupoId={grupoAtivoId ?? 0} periodo={periodo} />
             )}
           </div>
         )}

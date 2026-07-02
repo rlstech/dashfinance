@@ -164,16 +164,67 @@ class CustoFinanceiroSlot(BaseModel):
     mes: int
 
 
-class CustoFinanceiroLinha(BaseModel):
+class CategoriaDescricaoItem(BaseModel):
+    tipo: str  # 'transferencia' | 'controle'
     descricao: str
+
+
+class CustoFinanceiroCategoria(BaseModel):
+    id: int
+    nome: str
+    sinal: str  # 'entrada' | 'saida' — apenas rótulo/organização, não força o sinal do valor
+    ordem: int = 0
+    descricoes: list[CategoriaDescricaoItem] = []
+
+
+class CustoFinanceiroCategoriaIn(BaseModel):
+    nome: str
+    sinal: str = "saida"
+    ordem: int = 0
+    descricoes: list[CategoriaDescricaoItem] = []
+
+
+class CustoFinanceiroCategoriaLinha(BaseModel):
+    categoria_id: int | None  # None = "Não Classificado"
+    nome: str
+    sinal: str | None
     valores: list[float]  # alinhado a meses; net = entrada - saida
     total: float
 
 
 class CustoFinanceiroResponse(BaseModel):
     meses: list[CustoFinanceiroSlot]
-    transferencias: list[CustoFinanceiroLinha]
-    controle: list[CustoFinanceiroLinha]
+    categorias: list[CustoFinanceiroCategoriaLinha]
     total_entradas: float
     total_saidas: float
     fluxo_liquido: float
+
+
+class LancamentoConta(BaseModel):
+    empresa: str
+    banco: str
+    conta: str
+
+
+class LancamentoDetalhe(BaseModel):
+    id: str
+    tipo: str  # 'transferencia' | 'controle'
+    data: str
+    descricao: str
+    valor: float  # valor absoluto do lançamento
+    sentido: str  # 'entrada' | 'saida'
+    origem: LancamentoConta | None = None
+    destino: LancamentoConta | None = None
+    banco: str
+    conta: str
+    categoria_id: int | None = None
+
+
+class SetLancamentoCategoriaIn(BaseModel):
+    categoria_id: int | None = None
+
+
+class DescricaoDisponivel(BaseModel):
+    tipo: str
+    descricao: str
+    categoria_id: int | None = None

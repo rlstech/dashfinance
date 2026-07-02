@@ -4,7 +4,7 @@ import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
-  UserBasic, CustoFinanceiroResponse,
+  UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, DescricaoDisponivel, LancamentoDetalhe,
 } from '@/types'
 
 export function useAP() {
@@ -252,6 +252,80 @@ export function useCustoFinanceiro(periodo: Periodo, grupoId: number | null, ena
       ano_fim: periodo.anoFim,
       mes_fim: periodo.mesFim,
     }),
+  })
+}
+
+export function useCustoFinanceiroCategorias() {
+  return useQuery<CustoFinanceiroCategoria[]>({
+    queryKey: ['custo-financeiro-categorias'],
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/categorias'),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+function invalidateCustoFinanceiro(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-categorias'] })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro'] })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricoes'] })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'] })
+}
+
+export function useCreateCustoFinanceiroCategoria() {
+  const queryClient = useQueryClient()
+  return useMutation<CustoFinanceiroCategoria | null, Error, Omit<CustoFinanceiroCategoria, 'id'>>({
+    mutationFn: (body) => api.post('/fluxo-obras/custo-financeiro/categorias', body),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useUpdateCustoFinanceiroCategoria() {
+  const queryClient = useQueryClient()
+  return useMutation<CustoFinanceiroCategoria | null, Error, CustoFinanceiroCategoria>({
+    mutationFn: ({ id, ...body }) => api.put(`/fluxo-obras/custo-financeiro/categorias/${id}`, body),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useDeleteCustoFinanceiroCategoria() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/fluxo-obras/custo-financeiro/categorias/${id}`),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useCustoFinanceiroDescricoes(enabled: boolean) {
+  return useQuery<DescricaoDisponivel[]>({
+    queryKey: ['custo-financeiro-descricoes'],
+    enabled,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/descricoes'),
+  })
+}
+
+export function useCustoFinanceiroLancamentos(
+  grupoId: number | null, categoriaId: number | null, periodo: Periodo, enabled: boolean,
+) {
+  return useQuery<LancamentoDetalhe[]>({
+    queryKey: ['custo-financeiro-lancamentos', grupoId, categoriaId, periodo],
+    enabled: enabled && grupoId !== null && categoriaId !== null,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/lancamentos', {
+      grupo_id: grupoId,
+      categoria_id: categoriaId,
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
+  })
+}
+
+export function useSetLancamentoCategoria() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, { lancamentoId: string; categoriaId: number | null }>({
+    mutationFn: async ({ lancamentoId, categoriaId }) => {
+      await api.post(`/fluxo-obras/custo-financeiro/lancamentos/${lancamentoId}/categoria`, { categoria_id: categoriaId })
+    },
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
   })
 }
 

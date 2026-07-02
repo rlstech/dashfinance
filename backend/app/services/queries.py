@@ -2,6 +2,7 @@
 Queries SQL migradas de db.py — preservadas exatamente.
 Todas usam placeholders parametrizados (%s).
 """
+import hashlib
 import pymssql
 from datetime import datetime, timedelta
 from app.services.database import get_db
@@ -34,6 +35,16 @@ def _is_blocked_banco(empresa: str, banco: str) -> bool:
 
 def _is_blocked_conta(empresa: str, banco: str, conta: str) -> bool:
     return conta in BLOCKED_CONTAS.get(empresa, {}).get(banco, set())
+
+
+def _lancamento_id(
+    tipo: str, empresa: str, banco: str, conta: str,
+    data: str, valor: float, descricao: str, sentido: str, occurrence: int,
+) -> str:
+    """ID estável (fingerprint) de um lançamento de tesouraria, usado para classificação manual persistente."""
+    raw = "|".join([tipo, empresa, banco, conta, data, f"{valor:.2f}", descricao, sentido, str(occurrence)])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
 
 _SALDO_CONTA_COL: str | None = None
 _REAJ_TABLE: str | None = None
@@ -312,6 +323,7 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
         rows = cur.fetchall()
 
     result: list[dict] = []
+    seen: dict[tuple, int] = {}
     for r in rows:
         descricao = (r["Obs_tb"] or "").strip() or "S/Descrição"
         valor = float(r["Valor_tb"] or 0)
@@ -320,8 +332,19 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
         emp_deb = EMPRESA_MAP.get(r["Empresa_tb"], "")
         banco_deb = str(r["BcoDeb"] or "").strip()
         conta_deb = str(r["ContaDeb_tb"] or "").strip()
+        emp_cred = EMPRESA_MAP.get(r["EmpresaCred_tb"], "")
+        banco_cred = str(r["BcoCred"] or "").strip()
+        conta_cred = str(r["ContaCred_tb"] or "").strip()
+
+        origem = {"empresa": emp_deb, "banco": banco_deb, "conta": conta_deb}
+        destino = {"empresa": emp_cred, "banco": banco_cred, "conta": conta_cred}
+
         if emp_deb and not _is_blocked_banco(emp_deb, banco_deb) and not _is_blocked_conta(emp_deb, banco_deb, conta_deb):
+            key = ("transferencia", emp_deb, banco_deb, conta_deb, data, valor, descricao, "saida")
+            seen[key] = seen.get(key, 0) + 1
             result.append({
+                "id": _lancamento_id(*key, seen[key]),
+                "tipo": "transferencia",
                 "empresa": emp_deb,
                 "sentido": "saida",
                 "descricao": descricao,
@@ -329,13 +352,16 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
                 "data": data,
                 "banco": banco_deb,
                 "conta": conta_deb,
+                "origem": origem,
+                "destino": destino,
             })
 
-        emp_cred = EMPRESA_MAP.get(r["EmpresaCred_tb"], "")
-        banco_cred = str(r["BcoCred"] or "").strip()
-        conta_cred = str(r["ContaCred_tb"] or "").strip()
         if emp_cred and not _is_blocked_banco(emp_cred, banco_cred) and not _is_blocked_conta(emp_cred, banco_cred, conta_cred):
+            key = ("transferencia", emp_cred, banco_cred, conta_cred, data, valor, descricao, "entrada")
+            seen[key] = seen.get(key, 0) + 1
             result.append({
+                "id": _lancamento_id(*key, seen[key]),
+                "tipo": "transferencia",
                 "empresa": emp_cred,
                 "sentido": "entrada",
                 "descricao": descricao,
@@ -343,6 +369,8 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
                 "data": data,
                 "banco": banco_cred,
                 "conta": conta_cred,
+                "origem": origem,
+                "destino": destino,
             })
     return result
 
@@ -373,23 +401,34 @@ def get_controle_financeiro(de: str = "2020-01-01", ate: str = "2030-12-31") -> 
         cur.execute(sql, (de, ate))
         rows = cur.fetchall()
 
-    result = [
-        {
-            "empresa": r["Empresa"] or "",
-            "sentido": "entrada" if r["EntSai_es"] == 0 else "saida",
-            "descricao": (r["Natureza"] or "S/Natureza").strip(),
-            "valor": float(r["Valor_es"] or 0),
-            "data": r["Data"] or "",
-            "banco": str(r["Banco"] or "").strip(),
-            "conta": str(r["Conta"] or "").strip(),
-        }
-        for r in rows
-    ]
-    return [
-        r for r in result
-        if not _is_blocked_banco(r["empresa"], r["banco"])
-        and not _is_blocked_conta(r["empresa"], r["banco"], r["conta"])
-    ]
+    seen: dict[tuple, int] = {}
+    result: list[dict] = []
+    for r in rows:
+        empresa = r["Empresa"] or ""
+        banco = str(r["Banco"] or "").strip()
+        conta = str(r["Conta"] or "").strip()
+        if _is_blocked_banco(empresa, banco) or _is_blocked_conta(empresa, banco, conta):
+            continue
+        sentido = "entrada" if r["EntSai_es"] == 0 else "saida"
+        descricao = (r["Natureza"] or "S/Natureza").strip()
+        valor = float(r["Valor_es"] or 0)
+        data = r["Data"] or ""
+        key = ("controle", empresa, banco, conta, data, valor, descricao, sentido)
+        seen[key] = seen.get(key, 0) + 1
+        result.append({
+            "id": _lancamento_id(*key, seen[key]),
+            "tipo": "controle",
+            "empresa": empresa,
+            "sentido": sentido,
+            "descricao": descricao,
+            "valor": valor,
+            "data": data,
+            "banco": banco,
+            "conta": conta,
+            "origem": None,
+            "destino": None,
+        })
+    return result
 
 
 def get_saldo_banco(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[dict]:

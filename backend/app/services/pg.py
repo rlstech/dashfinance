@@ -100,6 +100,39 @@ CREATE TABLE IF NOT EXISTS grupo_custo_financeiro_empresas (
     PRIMARY KEY (grupo_id, empresa)
 );
 
+CREATE TABLE IF NOT EXISTS custo_financeiro_categorias (
+    id         SERIAL PRIMARY KEY,
+    nome       VARCHAR(200) NOT NULL UNIQUE,
+    sinal      VARCHAR(10)  NOT NULL DEFAULT 'saida' CHECK (sinal IN ('entrada', 'saida')),
+    ordem      INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    updated_by INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS custo_financeiro_categoria_descricoes (
+    tipo         VARCHAR(20)  NOT NULL CHECK (tipo IN ('transferencia', 'controle')),
+    descricao    VARCHAR(300) NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES custo_financeiro_categorias(id) ON DELETE CASCADE,
+    PRIMARY KEY (tipo, descricao)
+);
+
+CREATE TABLE IF NOT EXISTS custo_financeiro_lancamento_overrides (
+    lancamento_id VARCHAR(64) PRIMARY KEY,
+    categoria_id  INTEGER NOT NULL REFERENCES custo_financeiro_categorias(id) ON DELETE CASCADE,
+    updated_at    TIMESTAMP DEFAULT NOW(),
+    updated_by    INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS custo_financeiro_lancamento_log (
+    id                    SERIAL PRIMARY KEY,
+    lancamento_id         VARCHAR(64) NOT NULL,
+    categoria_anterior_id INTEGER,
+    categoria_nova_id     INTEGER,
+    changed_at            TIMESTAMPTZ DEFAULT NOW(),
+    changed_by            INTEGER REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS fluxo_real_cache (
     grupo_id          INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
     ano               INTEGER NOT NULL,
@@ -180,6 +213,7 @@ async def init_tables():
         await _migrate_planejamento_per_grupo(conn)
         await _migrate_grupos_periodo_padrao(conn)
         await _migrate_grupos_custo_financeiro(conn)
+        await _seed_custo_financeiro_categorias(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
 
 
@@ -255,6 +289,27 @@ async def _migrate_grupos_custo_financeiro(conn):
         "ALTER TABLE grupos_obras ADD COLUMN incluir_custo_financeiro BOOLEAN DEFAULT FALSE"
     )
     log.info("Migração grupos_obras: coluna incluir_custo_financeiro adicionada")
+
+
+_DEFAULT_CATEGORIAS = [
+    ("Receitas financeiras", "entrada", 1),
+    ("Empréstimos tomados", "entrada", 2),
+    ("Empréstimos pagos", "saida", 3),
+    ("Aportes GAMA 01", "saida", 4),
+    ("Despesas financeiras", "saida", 5),
+]
+
+
+async def _seed_custo_financeiro_categorias(conn):
+    """One-time: cria as categorias padrão de Custo Financeiro se a tabela estiver vazia."""
+    existing = await conn.fetchval("SELECT COUNT(*) FROM custo_financeiro_categorias")
+    if existing:
+        return
+    await conn.executemany(
+        "INSERT INTO custo_financeiro_categorias (nome, sinal, ordem) VALUES ($1,$2,$3)",
+        _DEFAULT_CATEGORIAS,
+    )
+    log.info("Seed custo_financeiro_categorias: categorias padrão inseridas")
 
 
 def _pool_conn():
@@ -1038,3 +1093,122 @@ async def get_grupo_obras_e_greedy(grupo_id: int) -> tuple[list[str], list[str]]
         [r["obra_codigo"] for r in obras_rows],
         [r["empresa"] for r in greedy_rows],
     )
+
+
+# ── Custo Financeiro — Categorias ────────────────────────────────────────────
+
+async def get_custo_financeiro_categorias() -> list[dict]:
+    async with _pool.acquire() as conn:
+        cats = await conn.fetch(
+            "SELECT id, nome, sinal, ordem FROM custo_financeiro_categorias ORDER BY ordem, nome"
+        )
+        descs = await conn.fetch(
+            "SELECT categoria_id, tipo, descricao FROM custo_financeiro_categoria_descricoes ORDER BY descricao"
+        )
+    desc_map: dict[int, list[dict]] = {}
+    for d in descs:
+        desc_map.setdefault(d["categoria_id"], []).append({"tipo": d["tipo"], "descricao": d["descricao"]})
+    return [
+        {
+            "id": c["id"], "nome": c["nome"], "sinal": c["sinal"], "ordem": c["ordem"],
+            "descricoes": desc_map.get(c["id"], []),
+        }
+        for c in cats
+    ]
+
+
+async def _set_categoria_descricoes(conn, categoria_id: int, descricoes: list[dict]) -> None:
+    new_keys = {(d["tipo"], d["descricao"]) for d in descricoes}
+    current = await conn.fetch(
+        "SELECT tipo, descricao FROM custo_financeiro_categoria_descricoes WHERE categoria_id=$1",
+        categoria_id,
+    )
+    current_keys = {(c["tipo"], c["descricao"]) for c in current}
+    to_remove = current_keys - new_keys
+    if to_remove:
+        await conn.executemany(
+            "DELETE FROM custo_financeiro_categoria_descricoes WHERE categoria_id=$1 AND tipo=$2 AND descricao=$3",
+            [(categoria_id, t, d) for t, d in to_remove],
+        )
+    if new_keys:
+        await conn.executemany(
+            """INSERT INTO custo_financeiro_categoria_descricoes (tipo, descricao, categoria_id)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (tipo, descricao) DO UPDATE SET categoria_id = EXCLUDED.categoria_id""",
+            [(t, d, categoria_id) for t, d in new_keys],
+        )
+
+
+async def create_custo_financeiro_categoria(
+    nome: str, sinal: str, ordem: int, user_id: int,
+    descricoes: list[dict] | None = None,
+) -> dict:
+    descricoes = descricoes or []
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO custo_financeiro_categorias (nome, sinal, ordem, updated_by)
+               VALUES ($1,$2,$3,$4) RETURNING id""",
+            nome, sinal, ordem, user_id,
+        )
+        categoria_id = row["id"]
+        await _set_categoria_descricoes(conn, categoria_id, descricoes)
+    return {"id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem, "descricoes": descricoes}
+
+
+async def update_custo_financeiro_categoria(
+    categoria_id: int, nome: str, sinal: str, ordem: int, user_id: int,
+    descricoes: list[dict] | None = None,
+) -> dict | None:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE custo_financeiro_categorias
+               SET nome=$2, sinal=$3, ordem=$4, updated_at=NOW(), updated_by=$5
+               WHERE id=$1 RETURNING id""",
+            categoria_id, nome, sinal, ordem, user_id,
+        )
+        if not row:
+            return None
+        if descricoes is not None:
+            await _set_categoria_descricoes(conn, categoria_id, descricoes)
+    return {"id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem, "descricoes": descricoes or []}
+
+
+async def delete_custo_financeiro_categoria(categoria_id: int) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute("DELETE FROM custo_financeiro_categorias WHERE id=$1", categoria_id)
+
+
+async def get_custo_financeiro_overrides() -> dict[str, int]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT lancamento_id, categoria_id FROM custo_financeiro_lancamento_overrides"
+        )
+    return {r["lancamento_id"]: r["categoria_id"] for r in rows}
+
+
+async def set_lancamento_categoria(lancamento_id: str, categoria_id: int | None, user_id: int) -> None:
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            prev = await conn.fetchval(
+                "SELECT categoria_id FROM custo_financeiro_lancamento_overrides WHERE lancamento_id=$1",
+                lancamento_id,
+            )
+            if categoria_id is None:
+                await conn.execute(
+                    "DELETE FROM custo_financeiro_lancamento_overrides WHERE lancamento_id=$1",
+                    lancamento_id,
+                )
+            else:
+                await conn.execute(
+                    """INSERT INTO custo_financeiro_lancamento_overrides (lancamento_id, categoria_id, updated_by)
+                       VALUES ($1, $2, $3)
+                       ON CONFLICT (lancamento_id) DO UPDATE
+                       SET categoria_id=EXCLUDED.categoria_id, updated_at=NOW(), updated_by=EXCLUDED.updated_by""",
+                    lancamento_id, categoria_id, user_id,
+                )
+            await conn.execute(
+                """INSERT INTO custo_financeiro_lancamento_log
+                   (lancamento_id, categoria_anterior_id, categoria_nova_id, changed_by)
+                   VALUES ($1, $2, $3, $4)""",
+                lancamento_id, prev, categoria_id, user_id,
+            )

@@ -5,14 +5,17 @@ from datetime import datetime
 import openpyxl
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from app.deps.auth import get_current_user
+from app.deps.auth import get_current_user, require_admin
 from app.models.auth import UserOut
 from app.models.schemas import (
     AtualizarFluxoRealIn,
     BulkImportResult,
-    CustoFinanceiroLinha,
+    CustoFinanceiroCategoria,
+    CustoFinanceiroCategoriaIn,
+    CustoFinanceiroCategoriaLinha,
     CustoFinanceiroResponse,
     CustoFinanceiroSlot,
+    DescricaoDisponivel,
     FluxoMesRow,
     FluxoPlanejamentoResponse,
     FluxoRealCachedResponse,
@@ -21,8 +24,10 @@ from app.models.schemas import (
     FluxoRealResponse,
     GrupoTotaisPrevistos,
     GrupoTotaisReais,
+    LancamentoDetalhe,
     PlanejamentoLogEntry,
     SaveObraPlanejamentoIn,
+    SetLancamentoCategoriaIn,
 )
 from app.services import pg
 from app.services.cache import get_cached
@@ -525,6 +530,47 @@ async def importar_planilha(
     return BulkImportResult(imported=count, errors=errors)
 
 
+async def _empresas_visiveis_custo_financeiro(grupo_id: int, user: UserOut) -> set[str]:
+    from app.services.queries import EMPRESA_MAP
+
+    empresas: set[str] = set(EMPRESA_MAP.values()) if user.is_admin else set(user.empresas)
+    custo_financeiro_empresas = await pg.get_grupo_custo_financeiro_empresas(grupo_id)
+    if custo_financeiro_empresas:
+        empresas &= set(custo_financeiro_empresas)
+    return empresas
+
+
+async def _lancamentos_classificados(
+    empresas_visiveis: set[str],
+    slots_set: set[tuple[int, int]] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento
+    (override manual > regra por descrição > não classificado)."""
+    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
+    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
+
+    categorias = await pg.get_custo_financeiro_categorias()
+    regra_map: dict[tuple[str, str], int] = {}
+    for cat in categorias:
+        for d in cat["descricoes"]:
+            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
+    overrides = await pg.get_custo_financeiro_overrides()
+
+    out: list[dict] = []
+    for item in transf_raw + controle_raw:
+        if item.get("empresa") not in empresas_visiveis:
+            continue
+        try:
+            dt = datetime.strptime(item["data"], "%d/%m/%Y")
+        except (ValueError, TypeError):
+            continue
+        if slots_set is not None and (dt.year, dt.month) not in slots_set:
+            continue
+        categoria_id = overrides.get(item["id"]) or regra_map.get((item["tipo"], item["descricao"]))
+        out.append({**item, "categoria_id": categoria_id, "_dt": dt})
+    return out, categorias
+
+
 @router.get("/custo-financeiro", response_model=CustoFinanceiroResponse)
 async def get_custo_financeiro(
     grupo_id: int,
@@ -535,78 +581,170 @@ async def get_custo_financeiro(
     mes_fim: int = 12,
     user: UserOut = Depends(get_current_user),
 ):
-    """Tesouraria consolidada: transferências bancárias + controle financeiro, mês a mês, escopado às empresas do grupo."""
-    from app.services.queries import EMPRESA_MAP
-
+    """Tesouraria consolidada: transferências bancárias + controle financeiro, classificados por
+    categoria, mês a mês, escopado às empresas do grupo."""
     if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
         raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
 
     yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
     slots = _periodo_slots(yi, mi, yf, mf)
-
-    empresas_visiveis: set[str] = (
-        set(EMPRESA_MAP.values()) if user.is_admin else set(user.empresas)
-    )
-    custo_financeiro_empresas = await pg.get_grupo_custo_financeiro_empresas(grupo_id)
-    if custo_financeiro_empresas:
-        empresas_visiveis &= set(custo_financeiro_empresas)
-
     slots_set: set[tuple[int, int]] = set(slots)
     slot_index: dict[tuple[int, int], int] = {s: i for i, s in enumerate(slots)}
     n = len(slots)
 
-    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
+    empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
+    lancamentos, categorias = await _lancamentos_classificados(empresas_visiveis, slots_set)
 
-    def _aggregate(
-        records: list[dict],
-    ) -> tuple[dict[str, list[float]], float, float]:
-        by_desc: dict[str, list[float]] = {}
-        total_ent = 0.0
-        total_sai = 0.0
-        for item in records:
-            if item.get("empresa") not in empresas_visiveis:
-                continue
-            try:
-                dt = datetime.strptime(item["data"], "%d/%m/%Y")
-            except (ValueError, TypeError):
-                continue
-            slot = (dt.year, dt.month)
-            if slot not in slots_set:
-                continue
-            desc = item.get("descricao") or "S/Descrição"
-            valor = float(item.get("valor") or 0)
-            sentido = item.get("sentido", "saida")
-            net = valor if sentido == "entrada" else -valor
-            if desc not in by_desc:
-                by_desc[desc] = [0.0] * n
-            by_desc[desc][slot_index[slot]] += net
-            if sentido == "entrada":
-                total_ent += valor
-            else:
-                total_sai += valor
-        return by_desc, total_ent, total_sai
+    valores_por_categoria: dict[int | None, list[float]] = {}
+    total_entradas = 0.0
+    total_saidas = 0.0
+    for lc in lancamentos:
+        idx = slot_index[(lc["_dt"].year, lc["_dt"].month)]
+        cat_id = lc["categoria_id"]
+        valores_por_categoria.setdefault(cat_id, [0.0] * n)[idx] += (
+            lc["valor"] if lc["sentido"] == "entrada" else -lc["valor"]
+        )
+        if lc["sentido"] == "entrada":
+            total_entradas += lc["valor"]
+        else:
+            total_saidas += lc["valor"]
 
-    transf_by_desc, t_ent, t_sai = _aggregate(transf_raw)
-    ctrl_by_desc, c_ent, c_sai = _aggregate(controle_raw)
+    cat_by_id = {c["id"]: c for c in categorias}
+    linhas: list[CustoFinanceiroCategoriaLinha] = []
+    for cat_id, vals in valores_por_categoria.items():
+        if not any(v != 0 for v in vals):
+            continue
+        if cat_id is None:
+            nome, sinal = "Não Classificado", None
+        else:
+            cat = cat_by_id.get(cat_id)
+            if cat is None:
+                continue  # categoria removida entre a classificação e a leitura
+            nome, sinal = cat["nome"], cat["sinal"]
+        linhas.append(CustoFinanceiroCategoriaLinha(
+            categoria_id=cat_id, nome=nome, sinal=sinal, valores=vals, total=sum(vals),
+        ))
 
-    def _to_linhas(by_desc: dict[str, list[float]]) -> list[CustoFinanceiroLinha]:
-        linhas = [
-            CustoFinanceiroLinha(descricao=desc, valores=vals, total=sum(vals))
-            for desc, vals in by_desc.items()
-            if any(v != 0 for v in vals)
-        ]
-        linhas.sort(key=lambda l: abs(l.total), reverse=True)
-        return linhas
-
-    total_entradas = t_ent + c_ent
-    total_saidas = t_sai + c_sai
+    ordem_map = {c["id"]: c["ordem"] for c in categorias}
+    linhas.sort(key=lambda l: (l.categoria_id is None, ordem_map.get(l.categoria_id, 0)))
 
     return CustoFinanceiroResponse(
         meses=[CustoFinanceiroSlot(ano=a, mes=m) for a, m in slots],
-        transferencias=_to_linhas(transf_by_desc),
-        controle=_to_linhas(ctrl_by_desc),
+        categorias=linhas,
         total_entradas=total_entradas,
         total_saidas=total_saidas,
         fluxo_liquido=total_entradas - total_saidas,
     )
+
+
+@router.get("/custo-financeiro/lancamentos", response_model=list[LancamentoDetalhe])
+async def get_custo_financeiro_lancamentos(
+    grupo_id: int,
+    categoria_id: int = 0,  # 0 = Não Classificado
+    ano: int | None = None,
+    ano_inicio: int | None = None,
+    mes_inicio: int = 1,
+    ano_fim: int | None = None,
+    mes_fim: int = 12,
+    user: UserOut = Depends(get_current_user),
+):
+    """Detalha os lançamentos de uma categoria (ou não classificados) no período, para o grupo informado."""
+    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
+
+    yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
+    slots_set = set(_periodo_slots(yi, mi, yf, mf))
+
+    empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
+    lancamentos, _ = await _lancamentos_classificados(empresas_visiveis, slots_set)
+
+    alvo = categoria_id or None
+    filtrados = sorted(
+        (lc for lc in lancamentos if lc["categoria_id"] == alvo),
+        key=lambda lc: lc["_dt"],
+    )
+
+    return [
+        LancamentoDetalhe(
+            id=lc["id"],
+            tipo=lc["tipo"],
+            data=lc["data"],
+            descricao=lc["descricao"],
+            valor=lc["valor"],
+            sentido=lc["sentido"],
+            origem=lc.get("origem"),
+            destino=lc.get("destino"),
+            banco=lc["banco"],
+            conta=lc["conta"],
+            categoria_id=lc["categoria_id"],
+        )
+        for lc in filtrados
+    ]
+
+
+@router.post("/custo-financeiro/lancamentos/{lancamento_id}/categoria", status_code=204)
+async def set_custo_financeiro_lancamento_categoria(
+    lancamento_id: str,
+    body: SetLancamentoCategoriaIn,
+    user: UserOut = Depends(require_admin),
+):
+    """Reclassifica manualmente um lançamento (transferência ou controle financeiro) para outra categoria."""
+    await pg.set_lancamento_categoria(lancamento_id, body.categoria_id, user.id)
+
+
+@router.get("/custo-financeiro/descricoes", response_model=list[DescricaoDisponivel])
+async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)):
+    """Lista as descrições/naturezas distintas presentes nos dados, com a categoria já atribuída (se houver).
+    Usado para montar a UI de gerenciamento de categorias."""
+    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
+    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
+
+    categorias = await pg.get_custo_financeiro_categorias()
+    regra_map: dict[tuple[str, str], int] = {}
+    for cat in categorias:
+        for d in cat["descricoes"]:
+            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
+
+    vistos: set[tuple[str, str]] = set()
+    out: list[DescricaoDisponivel] = []
+    for item in transf_raw + controle_raw:
+        key = (item["tipo"], item["descricao"])
+        if key in vistos:
+            continue
+        vistos.add(key)
+        out.append(DescricaoDisponivel(tipo=key[0], descricao=key[1], categoria_id=regra_map.get(key)))
+    out.sort(key=lambda d: (d.tipo, d.descricao))
+    return out
+
+
+@router.get("/custo-financeiro/categorias", response_model=list[CustoFinanceiroCategoria])
+async def list_custo_financeiro_categorias(user: UserOut = Depends(get_current_user)):
+    return await pg.get_custo_financeiro_categorias()
+
+
+@router.post("/custo-financeiro/categorias", response_model=CustoFinanceiroCategoria, status_code=201)
+async def create_custo_financeiro_categoria(
+    body: CustoFinanceiroCategoriaIn, user: UserOut = Depends(require_admin),
+):
+    return await pg.create_custo_financeiro_categoria(
+        body.nome, body.sinal, body.ordem, user.id,
+        [d.model_dump() for d in body.descricoes],
+    )
+
+
+@router.put("/custo-financeiro/categorias/{categoria_id}", response_model=CustoFinanceiroCategoria)
+async def update_custo_financeiro_categoria(
+    categoria_id: int, body: CustoFinanceiroCategoriaIn, user: UserOut = Depends(require_admin),
+):
+    result = await pg.update_custo_financeiro_categoria(
+        categoria_id, body.nome, body.sinal, body.ordem, user.id,
+        [d.model_dump() for d in body.descricoes],
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    return result
+
+
+@router.delete("/custo-financeiro/categorias/{categoria_id}", status_code=204)
+async def delete_custo_financeiro_categoria(categoria_id: int, user: UserOut = Depends(require_admin)):
+    await pg.delete_custo_financeiro_categoria(categoria_id)
