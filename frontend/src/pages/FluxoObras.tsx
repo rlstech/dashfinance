@@ -557,18 +557,37 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                     </div>
                   </div>
                 )}
-                {incluirCustoFinanceiro && transferenciasContas.length > 0 && (
+                {incluirCustoFinanceiro && (transferenciasContas.length > 0 || custoFinanceiroContas.length > 0) && (
                   <div className="space-y-1 pt-1">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-dark">Contas consideradas (Transferências Bancárias)</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-dark">Contas consideradas (Transferências Bancárias)</span>
+                      {custoFinanceiroContas.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-[10px] text-brand hover:underline flex-shrink-0"
+                          onClick={() => setCustoFinanceiroContas([])}
+                        >
+                          Limpar filtro de contas
+                        </button>
+                      )}
+                    </div>
                     <p className="text-[10px] text-muted-foreground">
                       Restringe quais contas bancárias entram nas Transferências Bancárias do card (não afeta o Controle Financeiro). Se nenhuma conta for marcada, todas as contas das empresas consideradas acima entram.
                     </p>
                     <div className="border-2 border-grid max-h-40 overflow-auto divide-y divide-grid/50">
-                      {transferenciasContas
+                      {[
+                        ...transferenciasContas,
+                        ...custoFinanceiroContas.filter(
+                          (s) => !transferenciasContas.some((c) => c.empresa === s.empresa && c.banco === s.banco && c.conta === s.conta),
+                        ),
+                      ]
                         .filter((c) => custoFinanceiroEmpresas.length === 0 || custoFinanceiroEmpresas.includes(c.empresa))
                         .map((c) => {
                           const checked = custoFinanceiroContas.some(
                             (s) => s.empresa === c.empresa && s.banco === c.banco && s.conta === c.conta,
+                          )
+                          const orfa = !transferenciasContas.some(
+                            (t) => t.empresa === c.empresa && t.banco === c.banco && t.conta === c.conta,
                           )
                           return (
                             <label key={`${c.empresa}-${c.banco}-${c.conta}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
@@ -584,6 +603,11 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                               />
                               <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0 truncate">{c.empresa}</span>
                               <span className="truncate flex-1">Banco {c.banco} / Conta {c.conta}</span>
+                              {orfa && (
+                                <span className="text-[9px] text-amber-600 flex-shrink-0" title="Essa conta está marcada no filtro salvo, mas não aparece nos lançamentos atuais.">
+                                  sem lançamentos recentes
+                                </span>
+                              )}
                             </label>
                           )
                         })}
