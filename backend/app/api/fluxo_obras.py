@@ -527,6 +527,7 @@ async def importar_planilha(
 
 @router.get("/custo-financeiro", response_model=CustoFinanceiroResponse)
 async def get_custo_financeiro(
+    grupo_id: int,
     ano: int | None = None,
     ano_inicio: int | None = None,
     mes_inicio: int = 1,
@@ -534,8 +535,11 @@ async def get_custo_financeiro(
     mes_fim: int = 12,
     user: UserOut = Depends(get_current_user),
 ):
-    """Tesouraria consolidada: transferências bancárias + controle financeiro, mês a mês."""
+    """Tesouraria consolidada: transferências bancárias + controle financeiro, mês a mês, escopado às empresas do grupo."""
     from app.services.queries import EMPRESA_MAP
+
+    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
 
     yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
     slots = _periodo_slots(yi, mi, yf, mf)
@@ -543,6 +547,9 @@ async def get_custo_financeiro(
     empresas_visiveis: set[str] = (
         set(EMPRESA_MAP.values()) if user.is_admin else set(user.empresas)
     )
+    custo_financeiro_empresas = await pg.get_grupo_custo_financeiro_empresas(grupo_id)
+    if custo_financeiro_empresas:
+        empresas_visiveis &= set(custo_financeiro_empresas)
 
     slots_set: set[tuple[int, int]] = set(slots)
     slot_index: dict[tuple[int, int], int] = {s: i for i, s in enumerate(slots)}

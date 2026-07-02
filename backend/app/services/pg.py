@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS grupo_empresas_greedy (
     PRIMARY KEY (grupo_id, empresa)
 );
 
+CREATE TABLE IF NOT EXISTS grupo_custo_financeiro_empresas (
+    grupo_id INTEGER REFERENCES grupos_obras(id) ON DELETE CASCADE,
+    empresa  VARCHAR(200) NOT NULL,
+    PRIMARY KEY (grupo_id, empresa)
+);
+
 CREATE TABLE IF NOT EXISTS fluxo_real_cache (
     grupo_id          INTEGER NOT NULL REFERENCES grupos_obras(id) ON DELETE CASCADE,
     ano               INTEGER NOT NULL,
@@ -467,6 +473,10 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
             "SELECT grupo_id, empresa FROM grupo_empresas_greedy WHERE grupo_id = ANY($1)",
             grupo_ids,
         )
+        cf_empresas = await conn.fetch(
+            "SELECT grupo_id, empresa FROM grupo_custo_financeiro_empresas WHERE grupo_id = ANY($1)",
+            grupo_ids,
+        )
 
     obras_map: dict[int, list[str]] = {}
     pct_map: dict[int, dict[str, float]] = {}
@@ -487,6 +497,10 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
     greedy_map: dict[int, list[str]] = {}
     for row in greedy:
         greedy_map.setdefault(row["grupo_id"], []).append(row["empresa"])
+
+    cf_empresas_map: dict[int, list[str]] = {}
+    for row in cf_empresas:
+        cf_empresas_map.setdefault(row["grupo_id"], []).append(row["empresa"])
 
     return [
         {
@@ -510,6 +524,7 @@ async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:
                 "mes_fim": g["periodo_mes_fim"],
             } if g["periodo_ano_inicio"] is not None else None,
             "incluir_custo_financeiro": bool(g["incluir_custo_financeiro"] or False),
+            "custo_financeiro_empresas": cf_empresas_map.get(g["id"], []),
         }
         for g in grupos
     ]
@@ -564,9 +579,11 @@ async def create_grupo(
     user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
     incluir_custo_financeiro: bool = False,
+    custo_financeiro_empresas: list[str] | None = None,
 ) -> dict:
     shares = _normalize_shares(shared_with)
     empresas_greedy = empresas_greedy or []
+    custo_financeiro_empresas = custo_financeiro_empresas or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """INSERT INTO grupos_obras
@@ -577,6 +594,7 @@ async def create_grupo(
         grupo_id = row["id"]
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
         await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
+        await _set_grupo_custo_financeiro_empresas(conn, grupo_id, custo_financeiro_empresas)
         await _set_grupo_shares(conn, grupo_id, shares)
     return {
         "id": grupo_id, "nome": nome, "descricao": descricao,
@@ -585,6 +603,7 @@ async def create_grupo(
         "shared_with": shares,
         "empresas_greedy": empresas_greedy,
         "incluir_custo_financeiro": incluir_custo_financeiro,
+        "custo_financeiro_empresas": custo_financeiro_empresas,
     }
 
 
@@ -594,8 +613,10 @@ async def update_grupo(
     user_id: int, shared_with: list | None = None,
     empresas_greedy: list[str] | None = None,
     incluir_custo_financeiro: bool = False,
+    custo_financeiro_empresas: list[str] | None = None,
 ) -> dict | None:
     empresas_greedy = empresas_greedy or []
+    custo_financeiro_empresas = custo_financeiro_empresas or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """UPDATE grupos_obras
@@ -608,6 +629,7 @@ async def update_grupo(
             return None
         await _set_grupo_obras(conn, grupo_id, obras, percentuais)
         await _set_grupo_empresas_greedy(conn, grupo_id, empresas_greedy)
+        await _set_grupo_custo_financeiro_empresas(conn, grupo_id, custo_financeiro_empresas)
         if shared_with is not None:
             new_shares = _normalize_shares(shared_with)
             await _set_grupo_shares(conn, grupo_id, new_shares)
@@ -627,6 +649,7 @@ async def update_grupo(
         "shared_with": new_shares,
         "empresas_greedy": empresas_greedy,
         "incluir_custo_financeiro": incluir_custo_financeiro,
+        "custo_financeiro_empresas": custo_financeiro_empresas,
     }
 
 
@@ -672,6 +695,24 @@ async def _set_grupo_empresas_greedy(conn, grupo_id: int, empresas: list[str]):
             "INSERT INTO grupo_empresas_greedy (grupo_id, empresa) VALUES ($1, $2)",
             [(grupo_id, e) for e in empresas],
         )
+
+
+async def _set_grupo_custo_financeiro_empresas(conn, grupo_id: int, empresas: list[str]):
+    await conn.execute("DELETE FROM grupo_custo_financeiro_empresas WHERE grupo_id=$1", grupo_id)
+    if empresas:
+        await conn.executemany(
+            "INSERT INTO grupo_custo_financeiro_empresas (grupo_id, empresa) VALUES ($1, $2)",
+            [(grupo_id, e) for e in empresas],
+        )
+
+
+async def get_grupo_custo_financeiro_empresas(grupo_id: int) -> list[str]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT empresa FROM grupo_custo_financeiro_empresas WHERE grupo_id=$1",
+            grupo_id,
+        )
+    return [r["empresa"] for r in rows]
 
 
 async def bulk_upsert_planejamento(grupo_id: int, items: list[dict]) -> int:

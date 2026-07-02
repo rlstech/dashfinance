@@ -69,6 +69,7 @@ class GrupoObrasIn(BaseModel):
     shared_with: list[GrupoShareItem] = []
     empresas_greedy: list[str] = []
     incluir_custo_financeiro: bool = False
+    custo_financeiro_empresas: list[str] = []
 
 
 class PeriodoPadrao(BaseModel):
@@ -92,6 +93,7 @@ class GrupoObrasOut(BaseModel):
     empresas_greedy: list[str] = []
     periodo_padrao: PeriodoPadrao | None = None
     incluir_custo_financeiro: bool = False
+    custo_financeiro_empresas: list[str] = []
 
 
 class UserBasic(BaseModel):

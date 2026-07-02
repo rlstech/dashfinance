@@ -240,12 +240,13 @@ export function useGruposTotaisReais(ano: number) {
   })
 }
 
-export function useCustoFinanceiro(periodo: Periodo, enabled: boolean) {
+export function useCustoFinanceiro(periodo: Periodo, grupoId: number | null, enabled: boolean) {
   return useQuery<CustoFinanceiroResponse>({
-    queryKey: ['custo-financeiro', periodo],
-    enabled,
+    queryKey: ['custo-financeiro', periodo, grupoId],
+    enabled: enabled && grupoId !== null,
     staleTime: 1000 * 60 * 5,
     queryFn: () => api.get('/fluxo-obras/custo-financeiro', {
+      grupo_id: grupoId,
       ano_inicio: periodo.anoInicio,
       mes_inicio: periodo.mesInicio,
       ano_fim: periodo.anoFim,

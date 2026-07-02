@@ -150,6 +150,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [shares, setShares] = useState<GrupoShareItem[]>(initialEditando?.shared_with ?? [])
   const [empresasGreedy, setEmpresasGreedy] = useState<string[]>(initialEditando?.empresas_greedy ?? [])
   const [incluirCustoFinanceiro, setIncluirCustoFinanceiro] = useState<boolean>(initialEditando?.incluir_custo_financeiro ?? false)
+  const [custoFinanceiroEmpresas, setCustoFinanceiroEmpresas] = useState<string[]>(initialEditando?.custo_financeiro_empresas ?? [])
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
@@ -178,6 +179,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setPercentuais({}); setObraEspecial('')
     setEmpresaFiltro(null); setBuscaObra('')
     setShares([]); setEmpresasGreedy([]); setIncluirCustoFinanceiro(false)
+    setCustoFinanceiroEmpresas([])
   }
 
   function startCreate() {
@@ -198,6 +200,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setShares(g.shared_with ?? [])
     setEmpresasGreedy(g.empresas_greedy ?? [])
     setIncluirCustoFinanceiro(g.incluir_custo_financeiro ?? false)
+    setCustoFinanceiroEmpresas(g.custo_financeiro_empresas ?? [])
     setEditando(g)
   }
 
@@ -218,6 +221,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       shared_with: shares,
       empresas_greedy: empresasGreedy,
       incluir_custo_financeiro: incluirCustoFinanceiro,
+      custo_financeiro_empresas: custoFinanceiroEmpresas,
     }
     if (editando) {
       updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
@@ -497,13 +501,45 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                     type="checkbox"
                     className="accent-brand flex-shrink-0"
                     checked={incluirCustoFinanceiro}
-                    onChange={(e) => setIncluirCustoFinanceiro(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setIncluirCustoFinanceiro(checked)
+                      if (checked && custoFinanceiroEmpresas.length === 0) {
+                        const inferidas = empresas.filter((emp) =>
+                          (obrasPorEmpresa[emp] ?? []).some((o) => obrasSel.includes(o))
+                        )
+                        if (inferidas.length) setCustoFinanceiroEmpresas(inferidas)
+                      }
+                    }}
                   />
                   <span className="text-[10px] font-black uppercase tracking-widest text-dark">Custo Financeiro</span>
                 </label>
                 <p className="text-[10px] text-muted-foreground">
                   Exibe ao final do grupo um card de tesouraria consolidado com transferências bancárias e controle financeiro, mês a mês.
                 </p>
+                {incluirCustoFinanceiro && empresas.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-dark">Empresas consideradas</span>
+                    <p className="text-[10px] text-muted-foreground">
+                      Somente transferências bancárias e controle financeiro dessas empresas entram no card. Se nenhuma for marcada, todas as empresas visíveis para você serão consideradas.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {empresas.map((emp) => (
+                        <label key={emp} className="flex items-center gap-1.5 text-xs cursor-pointer select-none hover:bg-brand/5 px-1 py-0.5">
+                          <input
+                            type="checkbox"
+                            className="accent-brand flex-shrink-0"
+                            checked={custoFinanceiroEmpresas.includes(emp)}
+                            onChange={(e) => setCustoFinanceiroEmpresas((prev) =>
+                              e.target.checked ? [...prev, emp] : prev.filter((x) => x !== emp)
+                            )}
+                          />
+                          <span>{emp}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Compartilhar com */}
@@ -1852,7 +1888,7 @@ export default function FluxoObras() {
   )
 
   const custoFinanceiroEnabled = !!(grupoAtivoId !== null && grupoAtivo?.incluir_custo_financeiro)
-  const { data: custoFinanceiro } = useCustoFinanceiro(periodo, custoFinanceiroEnabled)
+  const { data: custoFinanceiro } = useCustoFinanceiro(periodo, grupoAtivoId, custoFinanceiroEnabled)
 
   function calcTotaisGrupo(grupo: GrupoObras) {
     const t = totaisPrevMap?.[String(grupo.id)]
