@@ -1950,8 +1950,36 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const [sinal, setSinal] = useState<'entrada' | 'saida'>('saida')
   const [ordem, setOrdem] = useState(0)
   const [descSel, setDescSel] = useState<CategoriaDescricaoItem[]>([])
+  const [busca, setBusca] = useState('')
+  const [apenasNaoClassificadas, setApenasNaoClassificadas] = useState(false)
 
   const isPending = createCategoria.isPending || updateCategoria.isPending
+
+  const descricoesFiltradas = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+    return descricoes.filter((d) => {
+      if (apenasNaoClassificadas && d.categoria_id != null) return false
+      if (termo && !d.descricao.toLowerCase().includes(termo)) return false
+      return true
+    })
+  }, [descricoes, busca, apenasNaoClassificadas])
+
+  function marcarTodosVisiveis() {
+    setDescSel((prev) => {
+      const prevKeys = new Set(prev.map((d) => `${d.tipo}|${d.descricao}`))
+      const adicionar = descricoesFiltradas
+        .filter((d) => !prevKeys.has(`${d.tipo}|${d.descricao}`))
+        .map((d) => ({ tipo: d.tipo, descricao: d.descricao }))
+      return [...prev, ...adicionar]
+    })
+  }
+
+  function desmarcarTodosVisiveis() {
+    setDescSel((prev) => {
+      const visKeys = new Set(descricoesFiltradas.map((d) => `${d.tipo}|${d.descricao}`))
+      return prev.filter((d) => !visKeys.has(`${d.tipo}|${d.descricao}`))
+    })
+  }
 
   function startCreate() {
     setEditando(null)
@@ -1960,6 +1988,8 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setSinal('saida')
     setOrdem((categorias.length + 1) * 10)
     setDescSel([])
+    setBusca('')
+    setApenasNaoClassificadas(false)
   }
 
   function startEdit(c: CustoFinanceiroCategoria) {
@@ -1969,6 +1999,8 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setSinal(c.sinal)
     setOrdem(c.ordem)
     setDescSel(c.descricoes)
+    setBusca('')
+    setApenasNaoClassificadas(false)
   }
 
   function cancelForm() {
@@ -2080,8 +2112,54 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                 <p className="text-[10px] text-muted-foreground pb-1">
                   Marcar uma descrição já usada em outra categoria a transfere para esta.
                 </p>
+
+                <div className="flex items-center gap-2 pb-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                    <input
+                      className="w-full text-xs border-2 border-grid pl-6 pr-2 py-1.5 focus:outline-none focus:border-brand"
+                      placeholder="Buscar descrição..."
+                      value={busca}
+                      onChange={(e) => setBusca(e.target.value)}
+                    />
+                  </div>
+                  <label className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground cursor-pointer select-none whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      className="accent-brand"
+                      checked={apenasNaoClassificadas}
+                      onChange={(e) => setApenasNaoClassificadas(e.target.checked)}
+                    />
+                    Só não classificadas
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between pb-1">
+                  <span className="text-[10px] text-muted-foreground">
+                    {descricoesFiltradas.length} descrição(ões) no filtro — {descSel.length} selecionada(s) no total
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="text-[10px] font-bold text-brand hover:underline disabled:opacity-40 disabled:no-underline"
+                      onClick={marcarTodosVisiveis}
+                      disabled={descricoesFiltradas.length === 0}
+                    >
+                      Marcar todos visíveis
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[10px] font-bold text-muted-foreground hover:underline disabled:opacity-40 disabled:no-underline"
+                      onClick={desmarcarTodosVisiveis}
+                      disabled={descricoesFiltradas.length === 0}
+                    >
+                      Desmarcar todos visíveis
+                    </button>
+                  </div>
+                </div>
+
                 <div className="border-2 border-grid max-h-64 overflow-auto divide-y divide-grid/50">
-                  {descricoes.map((d) => {
+                  {descricoesFiltradas.map((d) => {
                     const checked = descSel.some((s) => s.tipo === d.tipo && s.descricao === d.descricao)
                     const outraCategoria = !checked && d.categoria_id != null
                       ? categorias.find((c) => c.id === d.categoria_id)
@@ -2099,8 +2177,10 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                       </label>
                     )
                   })}
-                  {descricoes.length === 0 && (
-                    <p className="px-2 py-3 text-xs text-muted-foreground">Nenhuma descrição disponível ainda.</p>
+                  {descricoesFiltradas.length === 0 && (
+                    <p className="px-2 py-3 text-xs text-muted-foreground">
+                      {descricoes.length === 0 ? 'Nenhuma descrição disponível ainda.' : 'Nenhuma descrição encontrada para esse filtro.'}
+                    </p>
                   )}
                 </div>
               </div>

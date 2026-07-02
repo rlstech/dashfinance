@@ -264,10 +264,12 @@ export function useCustoFinanceiroCategorias() {
 }
 
 function invalidateCustoFinanceiro(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-categorias'] })
-  queryClient.invalidateQueries({ queryKey: ['custo-financeiro'] })
-  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricoes'] })
-  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'] })
+  // refetchType: 'all' força a atualização mesmo se o card ainda não tiver sido observado como "ativo"
+  // no exato instante da invalidação (ex.: reabertura rápida do modal de grupo).
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-categorias'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricoes'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'], refetchType: 'all' })
 }
 
 export function useCreateCustoFinanceiroCategoria() {
