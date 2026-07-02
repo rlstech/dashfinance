@@ -1985,19 +1985,29 @@ function LancamentosTable({
             <td className="px-3 py-1 whitespace-nowrap">{lc.conta || '—'}</td>
             {isAdmin && (
               <td className="px-3 py-1">
-                <select
-                  className="text-[10px] border-2 border-grid px-1 py-0.5 bg-white focus:outline-none focus:border-brand"
-                  value={lc.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA}
-                  onChange={(e) => {
-                    const v = Number(e.target.value)
-                    onReclassify(lc.id, v === CATEGORIA_NAO_CLASSIFICADA ? null : v)
-                  }}
-                >
-                  <option value={CATEGORIA_NAO_CLASSIFICADA}>Não Classificado</option>
-                  {categorias.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                </select>
+                {lc.tipo === 'controle' ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+                    title="Classificado automaticamente pelo sentido do Controle Financeiro"
+                  >
+                    <Lock className="h-3 w-3 flex-shrink-0" />
+                    {categorias.find((c) => c.id === lc.categoria_id)?.nome ?? 'Não Classificado'}
+                  </span>
+                ) : (
+                  <select
+                    className="text-[10px] border-2 border-grid px-1 py-0.5 bg-white focus:outline-none focus:border-brand"
+                    value={lc.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      onReclassify(lc.id, v === CATEGORIA_NAO_CLASSIFICADA ? null : v)
+                    }}
+                  >
+                    <option value={CATEGORIA_NAO_CLASSIFICADA}>Não Classificado</option>
+                    {categorias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
+                )}
               </td>
             )}
           </tr>

@@ -555,8 +555,10 @@ async def _lancamentos_classificados(
     contas_transferencias: set[tuple[str, str, str]] | None = None,
     slots_set: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento
-    (override manual > regra por descrição > não classificado)."""
+    """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento.
+    Transferências: override manual > regra por descrição > não classificado.
+    Controle financeiro: sempre forçado pelo sentido (entrada > Receitas financeiras, saída > Despesas
+    financeiras), ignorando regra por descrição e override manual."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
     controle_raw: list[dict] = await get_cached("dash:controle:all") or []
 
@@ -566,6 +568,12 @@ async def _lancamentos_classificados(
         for d in cat["descricoes"]:
             regra_map[(d["tipo"], d["descricao"])] = cat["id"]
     overrides = await pg.get_custo_financeiro_overrides()
+    receitas_fin_id = next(
+        (c["id"] for c in categorias if c["nome"].strip().lower() == "receitas financeiras"), None
+    )
+    despesas_fin_id = next(
+        (c["id"] for c in categorias if c["nome"].strip().lower() == "despesas financeiras"), None
+    )
 
     out: list[dict] = []
     for item in transf_raw + controle_raw:
@@ -583,7 +591,10 @@ async def _lancamentos_classificados(
             continue
         if slots_set is not None and (dt.year, dt.month) not in slots_set:
             continue
-        categoria_id = overrides.get(item["id"]) or regra_map.get((item["tipo"], item["descricao"]))
+        if item["tipo"] == "controle":
+            categoria_id = receitas_fin_id if item["sentido"] == "entrada" else despesas_fin_id
+        else:
+            categoria_id = overrides.get(item["id"]) or regra_map.get((item["tipo"], item["descricao"]))
         out.append({**item, "categoria_id": categoria_id, "_dt": dt})
     return out, categorias
 
@@ -715,9 +726,9 @@ async def set_custo_financeiro_lancamento_categoria(
 async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)):
     """Lista as descrições/naturezas distintas presentes nos dados, com a categoria já atribuída (se houver)
     e o sinal observado nos lançamentos (entrada, saída ou mista). Usado para montar a UI de gerenciamento
-    de categorias e orientar o usuário sobre a que sinal cada descrição costuma pertencer."""
+    de categorias e orientar o usuário sobre a que sinal cada descrição costuma pertencer.
+    Controle financeiro é excluído: sua categoria é sempre forçada pelo sentido, não por regra de descrição."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
 
     categorias = await pg.get_custo_financeiro_categorias()
     regra_map: dict[tuple[str, str], int] = {}
@@ -726,7 +737,7 @@ async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)
             regra_map[(d["tipo"], d["descricao"])] = cat["id"]
 
     sentidos_por_desc: dict[tuple[str, str], set[str]] = {}
-    for item in transf_raw + controle_raw:
+    for item in transf_raw:
         key = (item["tipo"], item["descricao"])
         sentidos_por_desc.setdefault(key, set()).add(item["sentido"])
 
