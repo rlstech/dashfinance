@@ -128,6 +128,7 @@ export interface GrupoObras {
   periodo_padrao?: { ano_inicio: number; mes_inicio: number; ano_fim: number; mes_fim: number } | null
   incluir_custo_financeiro?: boolean
   custo_financeiro_empresas?: string[]
+  custo_financeiro_contas?: LancamentoConta[]
 }
 
 export interface UserBasic {

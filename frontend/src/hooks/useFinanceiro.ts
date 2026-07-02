@@ -5,6 +5,7 @@ import type {
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
   UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, DescricaoDisponivel, LancamentoDetalhe,
+  LancamentoConta,
 } from '@/types'
 
 export function useAP() {
@@ -328,6 +329,22 @@ export function useSetLancamentoCategoria() {
       await api.post(`/fluxo-obras/custo-financeiro/lancamentos/${lancamentoId}/categoria`, { categoria_id: categoriaId })
     },
     onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useCustoFinanceiroDescricaoLancamentos(tipo: string | null, descricao: string | null, enabled: boolean) {
+  return useQuery<LancamentoDetalhe[]>({
+    queryKey: ['custo-financeiro-descricao-lancamentos', tipo, descricao],
+    enabled: enabled && !!tipo && !!descricao,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/descricao-lancamentos', { tipo, descricao }),
+  })
+}
+
+export function useCustoFinanceiroTransferenciasContas(enabled: boolean) {
+  return useQuery<LancamentoConta[]>({
+    queryKey: ['custo-financeiro-transferencias-contas'],
+    enabled,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/transferencias-contas'),
   })
 }
 

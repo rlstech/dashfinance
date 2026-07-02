@@ -60,6 +60,12 @@ class GrupoShareItem(BaseModel):
     permission: Literal["view", "edit"] = "view"
 
 
+class ContaItem(BaseModel):
+    empresa: str
+    banco: str
+    conta: str
+
+
 class GrupoObrasIn(BaseModel):
     nome: str
     descricao: str | None = None
@@ -70,6 +76,7 @@ class GrupoObrasIn(BaseModel):
     empresas_greedy: list[str] = []
     incluir_custo_financeiro: bool = False
     custo_financeiro_empresas: list[str] = []
+    custo_financeiro_contas: list[ContaItem] = []
 
 
 class PeriodoPadrao(BaseModel):
@@ -94,6 +101,7 @@ class GrupoObrasOut(BaseModel):
     periodo_padrao: PeriodoPadrao | None = None
     incluir_custo_financeiro: bool = False
     custo_financeiro_empresas: list[str] = []
+    custo_financeiro_contas: list[ContaItem] = []
 
 
 class UserBasic(BaseModel):

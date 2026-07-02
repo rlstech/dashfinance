@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Eye, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
   useCreateCustoFinanceiroCategoria,
   useCustoFinanceiro,
   useCustoFinanceiroCategorias,
+  useCustoFinanceiroDescricaoLancamentos,
   useCustoFinanceiroDescricoes,
   useCustoFinanceiroLancamentos,
+  useCustoFinanceiroTransferenciasContas,
   useDeleteCustoFinanceiroCategoria,
   useDeleteGrupo,
   useFilterTree,
@@ -30,7 +32,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, DescricaoDisponivel } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, DescricaoDisponivel, LancamentoConta, LancamentoDetalhe } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const CATEGORIA_NAO_CLASSIFICADA = 0
@@ -160,6 +162,9 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
   const [empresasGreedy, setEmpresasGreedy] = useState<string[]>(initialEditando?.empresas_greedy ?? [])
   const [incluirCustoFinanceiro, setIncluirCustoFinanceiro] = useState<boolean>(initialEditando?.incluir_custo_financeiro ?? false)
   const [custoFinanceiroEmpresas, setCustoFinanceiroEmpresas] = useState<string[]>(initialEditando?.custo_financeiro_empresas ?? [])
+  const [custoFinanceiroContas, setCustoFinanceiroContas] = useState<LancamentoConta[]>(initialEditando?.custo_financeiro_contas ?? [])
+
+  const { data: transferenciasContas = [] } = useCustoFinanceiroTransferenciasContas(incluirCustoFinanceiro)
 
   const createGrupo = useCreateGrupo()
   const updateGrupo = useUpdateGrupo()
@@ -189,6 +194,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setEmpresaFiltro(null); setBuscaObra('')
     setShares([]); setEmpresasGreedy([]); setIncluirCustoFinanceiro(false)
     setCustoFinanceiroEmpresas([])
+    setCustoFinanceiroContas([])
   }
 
   function startCreate() {
@@ -210,6 +216,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
     setEmpresasGreedy(g.empresas_greedy ?? [])
     setIncluirCustoFinanceiro(g.incluir_custo_financeiro ?? false)
     setCustoFinanceiroEmpresas(g.custo_financeiro_empresas ?? [])
+    setCustoFinanceiroContas(g.custo_financeiro_contas ?? [])
     setEditando(g)
   }
 
@@ -231,6 +238,7 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
       empresas_greedy: empresasGreedy,
       incluir_custo_financeiro: incluirCustoFinanceiro,
       custo_financeiro_empresas: custoFinanceiroEmpresas,
+      custo_financeiro_contas: custoFinanceiroContas,
     }
     if (editando) {
       updateGrupo.mutate({ id: editando.id, ...payload }, { onSuccess: () => onClose() })
@@ -546,6 +554,39 @@ function GrupoModal({ grupos, obrasPorEmpresa, onClose, initialEditando, startIn
                           <span>{emp}</span>
                         </label>
                       ))}
+                    </div>
+                  </div>
+                )}
+                {incluirCustoFinanceiro && transferenciasContas.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-dark">Contas consideradas (Transferências Bancárias)</span>
+                    <p className="text-[10px] text-muted-foreground">
+                      Restringe quais contas bancárias entram nas Transferências Bancárias do card (não afeta o Controle Financeiro). Se nenhuma conta for marcada, todas as contas das empresas consideradas acima entram.
+                    </p>
+                    <div className="border-2 border-grid max-h-40 overflow-auto divide-y divide-grid/50">
+                      {transferenciasContas
+                        .filter((c) => custoFinanceiroEmpresas.length === 0 || custoFinanceiroEmpresas.includes(c.empresa))
+                        .map((c) => {
+                          const checked = custoFinanceiroContas.some(
+                            (s) => s.empresa === c.empresa && s.banco === c.banco && s.conta === c.conta,
+                          )
+                          return (
+                            <label key={`${c.empresa}-${c.banco}-${c.conta}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
+                              <input
+                                type="checkbox"
+                                className="accent-brand flex-shrink-0"
+                                checked={checked}
+                                onChange={(e) => setCustoFinanceiroContas((prev) =>
+                                  e.target.checked
+                                    ? [...prev, { empresa: c.empresa, banco: c.banco, conta: c.conta }]
+                                    : prev.filter((s) => !(s.empresa === c.empresa && s.banco === c.banco && s.conta === c.conta))
+                                )}
+                              />
+                              <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0 truncate">{c.empresa}</span>
+                              <span className="truncate flex-1">Banco {c.banco} / Conta {c.conta}</span>
+                            </label>
+                          )
+                        })}
                     </div>
                   </div>
                 )}
@@ -1844,6 +1885,85 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
   )
 }
 
+// ── Tabela reutilizável de lançamentos (categoria e descrição) ──────────────
+
+function fmtContaLabel(c: LancamentoConta | null): string {
+  if (!c) return '—'
+  return [c.empresa, [c.banco, c.conta].filter(Boolean).join('/')].filter(Boolean).join(' — ')
+}
+
+function LancamentosTable({
+  lancamentos, isLoading, emptyMessage, categorias, isAdmin, onReclassify,
+}: {
+  lancamentos: LancamentoDetalhe[]
+  isLoading: boolean
+  emptyMessage: string
+  categorias: CustoFinanceiroCategoria[]
+  isAdmin: boolean
+  onReclassify: (lancamentoId: string, categoriaId: number | null) => void
+}) {
+  if (isLoading) {
+    return (
+      <div className="p-4 space-y-2">
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-full" />
+        <Skeleton className="h-6 w-full" />
+      </div>
+    )
+  }
+  if (lancamentos.length === 0) {
+    return <p className="p-4 text-xs text-muted-foreground">{emptyMessage}</p>
+  }
+  return (
+    <table className="w-full text-xs border-collapse">
+      <thead>
+        <tr className="bg-dark text-white sticky top-0 z-10">
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] whitespace-nowrap">Data</th>
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Descrição</th>
+          <th className="text-right px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Valor</th>
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Origem</th>
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Destino</th>
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Banco</th>
+          <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Conta</th>
+          {isAdmin && <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Categoria</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {lancamentos.map((lc, i) => (
+          <tr key={lc.id} className={i % 2 === 0 ? 'bg-white' : 'bg-grid/20'}>
+            <td className="px-3 py-1 whitespace-nowrap">{lc.data}</td>
+            <td className="px-3 py-1 max-w-[240px] truncate" title={lc.descricao}>{lc.descricao}</td>
+            <td className={cn('px-3 py-1 text-right tabular-nums font-medium whitespace-nowrap', lc.sentido === 'entrada' ? 'text-green-700' : 'text-red-700')}>
+              {lc.sentido === 'entrada' ? '+' : '-'}{formatCurrency(lc.valor)}
+            </td>
+            <td className="px-3 py-1 whitespace-nowrap">{fmtContaLabel(lc.origem)}</td>
+            <td className="px-3 py-1 whitespace-nowrap">{fmtContaLabel(lc.destino)}</td>
+            <td className="px-3 py-1 whitespace-nowrap">{lc.banco || '—'}</td>
+            <td className="px-3 py-1 whitespace-nowrap">{lc.conta || '—'}</td>
+            {isAdmin && (
+              <td className="px-3 py-1">
+                <select
+                  className="text-[10px] border-2 border-grid px-1 py-0.5 bg-white focus:outline-none focus:border-brand"
+                  value={lc.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    onReclassify(lc.id, v === CATEGORIA_NAO_CLASSIFICADA ? null : v)
+                  }}
+                >
+                  <option value={CATEGORIA_NAO_CLASSIFICADA}>Não Classificado</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 // ── Modal: detalhamento de lançamentos de uma categoria ─────────────────────
 
 function LancamentosModal({
@@ -1860,11 +1980,6 @@ function LancamentosModal({
   const { data: categorias = [] } = useCustoFinanceiroCategorias()
   const setCategoria = useSetLancamentoCategoria()
 
-  function fmtConta(c: { empresa: string; banco: string; conta: string } | null): string {
-    if (!c) return '—'
-    return [c.empresa, [c.banco, c.conta].filter(Boolean).join('/')].filter(Boolean).join(' — ')
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -1873,62 +1988,54 @@ function LancamentosModal({
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
         </div>
         <div className="overflow-auto flex-1">
-          {isLoading ? (
-            <div className="p-4 space-y-2">
-              <Skeleton className="h-6 w-full" />
-              <Skeleton className="h-6 w-full" />
-              <Skeleton className="h-6 w-full" />
-            </div>
-          ) : lancamentos.length === 0 ? (
-            <p className="p-4 text-xs text-muted-foreground">Nenhum lançamento nesta categoria no período selecionado.</p>
-          ) : (
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="bg-dark text-white sticky top-0 z-10">
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px] whitespace-nowrap">Data</th>
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Descrição</th>
-                  <th className="text-right px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Valor</th>
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Origem</th>
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Destino</th>
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Banco</th>
-                  <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Conta</th>
-                  {isAdmin && <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Categoria</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {lancamentos.map((lc, i) => (
-                  <tr key={lc.id} className={i % 2 === 0 ? 'bg-white' : 'bg-grid/20'}>
-                    <td className="px-3 py-1 whitespace-nowrap">{lc.data}</td>
-                    <td className="px-3 py-1 max-w-[240px] truncate" title={lc.descricao}>{lc.descricao}</td>
-                    <td className={cn('px-3 py-1 text-right tabular-nums font-medium whitespace-nowrap', lc.sentido === 'entrada' ? 'text-green-700' : 'text-red-700')}>
-                      {lc.sentido === 'entrada' ? '+' : '-'}{formatCurrency(lc.valor)}
-                    </td>
-                    <td className="px-3 py-1 whitespace-nowrap">{fmtConta(lc.origem)}</td>
-                    <td className="px-3 py-1 whitespace-nowrap">{fmtConta(lc.destino)}</td>
-                    <td className="px-3 py-1 whitespace-nowrap">{lc.banco || '—'}</td>
-                    <td className="px-3 py-1 whitespace-nowrap">{lc.conta || '—'}</td>
-                    {isAdmin && (
-                      <td className="px-3 py-1">
-                        <select
-                          className="text-[10px] border-2 border-grid px-1 py-0.5 bg-white focus:outline-none focus:border-brand"
-                          value={lc.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA}
-                          onChange={(e) => {
-                            const v = Number(e.target.value)
-                            setCategoria.mutate({ lancamentoId: lc.id, categoriaId: v === CATEGORIA_NAO_CLASSIFICADA ? null : v })
-                          }}
-                        >
-                          <option value={CATEGORIA_NAO_CLASSIFICADA}>Não Classificado</option>
-                          {categorias.map((c) => (
-                            <option key={c.id} value={c.id}>{c.nome}</option>
-                          ))}
-                        </select>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <LancamentosTable
+            lancamentos={lancamentos}
+            isLoading={isLoading}
+            emptyMessage="Nenhum lançamento nesta categoria no período selecionado."
+            categorias={categorias}
+            isAdmin={isAdmin}
+            onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal: prévia de lançamentos de uma descrição (antes de classificar) ────
+
+function DescricaoLancamentosModal({
+  tipo, descricao, onClose,
+}: {
+  tipo: 'transferencia' | 'controle'
+  descricao: string
+  onClose: () => void
+}) {
+  const { data: lancamentos = [], isLoading } = useCustoFinanceiroDescricaoLancamentos(tipo, descricao, true)
+  const { data: categorias = [] } = useCustoFinanceiroCategorias()
+  const setCategoria = useSetLancamentoCategoria()
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
+          <div className="min-w-0">
+            <span className="text-xs font-black uppercase tracking-widest text-dark truncate block">{descricao}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {tipo === 'transferencia' ? 'Transferência Bancária' : 'Controle Financeiro'} — últimos lançamentos (máx. 200)
+            </span>
+          </div>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark flex-shrink-0" /></button>
+        </div>
+        <div className="overflow-auto flex-1">
+          <LancamentosTable
+            lancamentos={lancamentos}
+            isLoading={isLoading}
+            emptyMessage="Nenhum lançamento encontrado para essa descrição."
+            categorias={categorias}
+            isAdmin
+            onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
+          />
         </div>
       </div>
     </div>
@@ -1953,6 +2060,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const [busca, setBusca] = useState('')
   const [apenasNaoClassificadas, setApenasNaoClassificadas] = useState(false)
   const [filtroSentido, setFiltroSentido] = useState<'todos' | 'entrada' | 'saida' | 'mista'>('todos')
+  const [preview, setPreview] = useState<{ tipo: 'transferencia' | 'controle'; descricao: string } | null>(null)
 
   const isPending = createCategoria.isPending || updateCategoria.isPending
 
@@ -2038,6 +2146,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const showForm = criando || !!editando
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white block-border max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
@@ -2200,6 +2309,18 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                         {outraCategoria && (
                           <span className="text-[9px] text-muted-foreground flex-shrink-0">em: {outraCategoria.nome}</span>
                         )}
+                        <button
+                          type="button"
+                          className="flex-shrink-0 text-muted-foreground hover:text-brand"
+                          title="Ver lançamentos dessa descrição"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setPreview({ tipo: d.tipo, descricao: d.descricao })
+                          }}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
                       </label>
                     )
                   })}
@@ -2228,6 +2349,14 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+    {preview && (
+      <DescricaoLancamentosModal
+        tipo={preview.tipo}
+        descricao={preview.descricao}
+        onClose={() => setPreview(null)}
+      />
+    )}
+    </>
   )
 }
 

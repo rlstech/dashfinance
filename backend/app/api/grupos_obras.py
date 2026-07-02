@@ -48,6 +48,7 @@ async def create_grupo(body: GrupoObrasIn, user: UserOut = Depends(get_current_u
         body.empresas_greedy,
         body.incluir_custo_financeiro,
         body.custo_financeiro_empresas,
+        [c.model_dump() for c in body.custo_financeiro_contas],
     )
     return {**grupo, "is_owner": True, "can_edit": True}
 
@@ -67,6 +68,7 @@ async def update_grupo(grupo_id: int, body: GrupoObrasIn, user: UserOut = Depend
         body.empresas_greedy,
         body.incluir_custo_financeiro,
         body.custo_financeiro_empresas,
+        [c.model_dump() for c in body.custo_financeiro_contas],
     )
     if not result:
         raise HTTPException(status_code=404, detail="Grupo não encontrado")

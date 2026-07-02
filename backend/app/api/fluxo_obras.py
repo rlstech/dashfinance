@@ -24,6 +24,7 @@ from app.models.schemas import (
     FluxoRealResponse,
     GrupoTotaisPrevistos,
     GrupoTotaisReais,
+    LancamentoConta,
     LancamentoDetalhe,
     PlanejamentoLogEntry,
     SaveObraPlanejamentoIn,
@@ -540,8 +541,18 @@ async def _empresas_visiveis_custo_financeiro(grupo_id: int, user: UserOut) -> s
     return empresas
 
 
+async def _contas_transferencias_visiveis(grupo_id: int) -> set[tuple[str, str, str]] | None:
+    """Contas (empresa, banco, conta) permitidas para Transferências Bancárias no grupo.
+    None = sem filtro adicional (todas as contas das empresas visíveis)."""
+    contas = await pg.get_grupo_custo_financeiro_contas(grupo_id)
+    if not contas:
+        return None
+    return {(c["empresa"], c["banco"], c["conta"]) for c in contas}
+
+
 async def _lancamentos_classificados(
     empresas_visiveis: set[str],
+    contas_transferencias: set[tuple[str, str, str]] | None = None,
     slots_set: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento
@@ -559,6 +570,12 @@ async def _lancamentos_classificados(
     out: list[dict] = []
     for item in transf_raw + controle_raw:
         if item.get("empresa") not in empresas_visiveis:
+            continue
+        if (
+            contas_transferencias is not None
+            and item["tipo"] == "transferencia"
+            and (item["empresa"], item["banco"], item["conta"]) not in contas_transferencias
+        ):
             continue
         try:
             dt = datetime.strptime(item["data"], "%d/%m/%Y")
@@ -593,7 +610,8 @@ async def get_custo_financeiro(
     n = len(slots)
 
     empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
-    lancamentos, categorias = await _lancamentos_classificados(empresas_visiveis, slots_set)
+    contas_transferencias = await _contas_transferencias_visiveis(grupo_id)
+    lancamentos, categorias = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
 
     valores_por_categoria: dict[int | None, list[float]] = {}
     total_entradas = 0.0
@@ -656,7 +674,8 @@ async def get_custo_financeiro_lancamentos(
     slots_set = set(_periodo_slots(yi, mi, yf, mf))
 
     empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
-    lancamentos, _ = await _lancamentos_classificados(empresas_visiveis, slots_set)
+    contas_transferencias = await _contas_transferencias_visiveis(grupo_id)
+    lancamentos, _ = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
 
     alvo = categoria_id or None
     filtrados = sorted(
@@ -718,6 +737,76 @@ async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)
             tipo=key[0], descricao=key[1], categoria_id=regra_map.get(key), sentido=sentido,
         ))
     out.sort(key=lambda d: (d.tipo, d.descricao))
+    return out
+
+
+@router.get("/custo-financeiro/descricao-lancamentos", response_model=list[LancamentoDetalhe])
+async def get_custo_financeiro_descricao_lancamentos(
+    tipo: str, descricao: str, user: UserOut = Depends(require_admin),
+):
+    """Prévia dos lançamentos brutos de uma descrição específica, independente de já estar classificada
+    em categoria — ajuda a decidir a categoria e o sinal corretos antes de salvar a regra."""
+    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
+    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
+
+    categorias = await pg.get_custo_financeiro_categorias()
+    regra_map: dict[tuple[str, str], int] = {}
+    for cat in categorias:
+        for d in cat["descricoes"]:
+            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
+    overrides = await pg.get_custo_financeiro_overrides()
+
+    def _dt(item: dict) -> datetime:
+        try:
+            return datetime.strptime(item["data"], "%d/%m/%Y")
+        except (ValueError, TypeError):
+            return datetime.min
+
+    matched = [
+        item for item in (transf_raw + controle_raw)
+        if item["tipo"] == tipo and item["descricao"] == descricao
+    ]
+    matched.sort(key=_dt, reverse=True)
+    matched = matched[:200]
+
+    return [
+        LancamentoDetalhe(
+            id=item["id"],
+            tipo=item["tipo"],
+            data=item["data"],
+            descricao=item["descricao"],
+            valor=item["valor"],
+            sentido=item["sentido"],
+            origem=item.get("origem"),
+            destino=item.get("destino"),
+            banco=item["banco"],
+            conta=item["conta"],
+            categoria_id=overrides.get(item["id"]) or regra_map.get((item["tipo"], item["descricao"])),
+        )
+        for item in matched
+    ]
+
+
+@router.get("/custo-financeiro/transferencias-contas", response_model=list[LancamentoConta])
+async def get_custo_financeiro_transferencias_contas(user: UserOut = Depends(get_current_user)):
+    """Lista as contas (empresa, banco, conta) distintas presentes nos dados de Transferências Bancárias,
+    escopadas às empresas do usuário (admin vê todas), usada para montar a UI de seleção de contas
+    consideradas por grupo."""
+    from app.services.queries import EMPRESA_MAP
+
+    empresas_visiveis = set(EMPRESA_MAP.values()) if user.is_admin else set(user.empresas)
+    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
+    vistos: set[tuple[str, str, str]] = set()
+    out: list[LancamentoConta] = []
+    for item in transf_raw:
+        if item["empresa"] not in empresas_visiveis:
+            continue
+        key = (item["empresa"], item["banco"], item["conta"])
+        if key in vistos:
+            continue
+        vistos.add(key)
+        out.append(LancamentoConta(empresa=key[0], banco=key[1], conta=key[2]))
+    out.sort(key=lambda c: (c.empresa, c.banco, c.conta))
     return out
 
 
