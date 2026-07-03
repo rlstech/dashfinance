@@ -249,6 +249,7 @@ export interface CustoFinanceiroCategoria {
   sinal: 'entrada' | 'saida'
   ordem: number
   descricoes: CategoriaDescricaoItem[]
+  contas: LancamentoConta[]
 }
 
 export interface CustoFinanceiroCategoriaLinha {
@@ -290,6 +291,14 @@ export interface LancamentoDetalhe {
 export interface DescricaoDisponivel {
   tipo: 'transferencia' | 'controle'
   descricao: string
+  categoria_id: number | null
+  sentido: 'entrada' | 'saida' | 'mista'
+}
+
+export interface ContaDisponivel {
+  empresa: string
+  banco: string
+  conta: string
   categoria_id: number | null
   sentido: 'entrada' | 'saida' | 'mista'
 }

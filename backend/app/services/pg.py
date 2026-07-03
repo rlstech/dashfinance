@@ -125,6 +125,14 @@ CREATE TABLE IF NOT EXISTS custo_financeiro_categoria_descricoes (
     PRIMARY KEY (tipo, descricao)
 );
 
+CREATE TABLE IF NOT EXISTS custo_financeiro_categoria_contas (
+    empresa      VARCHAR(200) NOT NULL,
+    banco        VARCHAR(50)  NOT NULL,
+    conta        VARCHAR(50)  NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES custo_financeiro_categorias(id) ON DELETE CASCADE,
+    PRIMARY KEY (empresa, banco, conta)
+);
+
 CREATE TABLE IF NOT EXISTS custo_financeiro_lancamento_overrides (
     lancamento_id VARCHAR(64) PRIMARY KEY,
     categoria_id  INTEGER NOT NULL REFERENCES custo_financeiro_categorias(id) ON DELETE CASCADE,
@@ -1150,13 +1158,22 @@ async def get_custo_financeiro_categorias() -> list[dict]:
         descs = await conn.fetch(
             "SELECT categoria_id, tipo, descricao FROM custo_financeiro_categoria_descricoes ORDER BY descricao"
         )
+        contas = await conn.fetch(
+            "SELECT categoria_id, empresa, banco, conta FROM custo_financeiro_categoria_contas ORDER BY empresa, banco, conta"
+        )
     desc_map: dict[int, list[dict]] = {}
     for d in descs:
         desc_map.setdefault(d["categoria_id"], []).append({"tipo": d["tipo"], "descricao": d["descricao"]})
+    conta_map: dict[int, list[dict]] = {}
+    for c in contas:
+        conta_map.setdefault(c["categoria_id"], []).append(
+            {"empresa": c["empresa"], "banco": c["banco"], "conta": c["conta"]}
+        )
     return [
         {
             "id": c["id"], "nome": c["nome"], "sinal": c["sinal"], "ordem": c["ordem"],
             "descricoes": desc_map.get(c["id"], []),
+            "contas": conta_map.get(c["id"], []),
         }
         for c in cats
     ]
@@ -1184,11 +1201,35 @@ async def _set_categoria_descricoes(conn, categoria_id: int, descricoes: list[di
         )
 
 
+async def _set_categoria_contas(conn, categoria_id: int, contas: list[dict]) -> None:
+    new_keys = {(c["empresa"], c["banco"], c["conta"]) for c in contas}
+    current = await conn.fetch(
+        "SELECT empresa, banco, conta FROM custo_financeiro_categoria_contas WHERE categoria_id=$1",
+        categoria_id,
+    )
+    current_keys = {(c["empresa"], c["banco"], c["conta"]) for c in current}
+    to_remove = current_keys - new_keys
+    if to_remove:
+        await conn.executemany(
+            "DELETE FROM custo_financeiro_categoria_contas WHERE categoria_id=$1 AND empresa=$2 AND banco=$3 AND conta=$4",
+            [(categoria_id, e, b, c) for e, b, c in to_remove],
+        )
+    if new_keys:
+        await conn.executemany(
+            """INSERT INTO custo_financeiro_categoria_contas (empresa, banco, conta, categoria_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (empresa, banco, conta) DO UPDATE SET categoria_id = EXCLUDED.categoria_id""",
+            [(e, b, c, categoria_id) for e, b, c in new_keys],
+        )
+
+
 async def create_custo_financeiro_categoria(
     nome: str, sinal: str, ordem: int, user_id: int,
     descricoes: list[dict] | None = None,
+    contas: list[dict] | None = None,
 ) -> dict:
     descricoes = descricoes or []
+    contas = contas or []
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             """INSERT INTO custo_financeiro_categorias (nome, sinal, ordem, updated_by)
@@ -1197,12 +1238,17 @@ async def create_custo_financeiro_categoria(
         )
         categoria_id = row["id"]
         await _set_categoria_descricoes(conn, categoria_id, descricoes)
-    return {"id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem, "descricoes": descricoes}
+        await _set_categoria_contas(conn, categoria_id, contas)
+    return {
+        "id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem,
+        "descricoes": descricoes, "contas": contas,
+    }
 
 
 async def update_custo_financeiro_categoria(
     categoria_id: int, nome: str, sinal: str, ordem: int, user_id: int,
     descricoes: list[dict] | None = None,
+    contas: list[dict] | None = None,
 ) -> dict | None:
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -1215,7 +1261,12 @@ async def update_custo_financeiro_categoria(
             return None
         if descricoes is not None:
             await _set_categoria_descricoes(conn, categoria_id, descricoes)
-    return {"id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem, "descricoes": descricoes or []}
+        if contas is not None:
+            await _set_categoria_contas(conn, categoria_id, contas)
+    return {
+        "id": categoria_id, "nome": nome, "sinal": sinal, "ordem": ordem,
+        "descricoes": descricoes or [], "contas": contas or [],
+    }
 
 
 async def delete_custo_financeiro_categoria(categoria_id: int) -> None:

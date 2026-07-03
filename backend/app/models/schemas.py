@@ -169,12 +169,19 @@ class CategoriaDescricaoItem(BaseModel):
     descricao: str
 
 
+class LancamentoConta(BaseModel):
+    empresa: str
+    banco: str
+    conta: str
+
+
 class CustoFinanceiroCategoria(BaseModel):
     id: int
     nome: str
     sinal: str  # 'entrada' | 'saida' — apenas rótulo/organização, não força o sinal do valor
     ordem: int = 0
     descricoes: list[CategoriaDescricaoItem] = []
+    contas: list[LancamentoConta] = []  # regra por conta (só se aplica a tipo='transferencia')
 
 
 class CustoFinanceiroCategoriaIn(BaseModel):
@@ -182,6 +189,7 @@ class CustoFinanceiroCategoriaIn(BaseModel):
     sinal: str = "saida"
     ordem: int = 0
     descricoes: list[CategoriaDescricaoItem] = []
+    contas: list[LancamentoConta] = []
 
 
 class CustoFinanceiroCategoriaLinha(BaseModel):
@@ -198,12 +206,6 @@ class CustoFinanceiroResponse(BaseModel):
     total_entradas: float
     total_saidas: float
     fluxo_liquido: float
-
-
-class LancamentoConta(BaseModel):
-    empresa: str
-    banco: str
-    conta: str
 
 
 class LancamentoDetalhe(BaseModel):
@@ -229,3 +231,11 @@ class DescricaoDisponivel(BaseModel):
     descricao: str
     categoria_id: int | None = None
     sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa descrição
+
+
+class ContaDisponivel(BaseModel):
+    empresa: str
+    banco: str
+    conta: str
+    categoria_id: int | None = None
+    sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa conta
