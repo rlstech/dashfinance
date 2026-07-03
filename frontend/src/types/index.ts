@@ -302,3 +302,15 @@ export interface ContaDisponivel {
   categoria_id: number | null
   sentido: 'entrada' | 'saida' | 'mista'
 }
+
+export interface RegraParTransferencia {
+  id: number
+  empresa_origem: string
+  empresa_destino: string
+  banco: string
+  conta: string
+  rotulo: string | null
+  anular: boolean
+  categoria_positiva_id: number | null
+  categoria_negativa_id: number | null
+}

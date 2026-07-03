@@ -4,6 +4,7 @@ import {
   useAtualizarFluxoReal,
   useCreateGrupo,
   useCreateCustoFinanceiroCategoria,
+  useCreateCustoFinanceiroRegraPar,
   useCustoFinanceiro,
   useCustoFinanceiroCategorias,
   useCustoFinanceiroContaLancamentos,
@@ -11,8 +12,10 @@ import {
   useCustoFinanceiroDescricaoLancamentos,
   useCustoFinanceiroDescricoes,
   useCustoFinanceiroLancamentos,
+  useCustoFinanceiroRegrasPar,
   useCustoFinanceiroTransferenciasContas,
   useDeleteCustoFinanceiroCategoria,
+  useDeleteCustoFinanceiroRegraPar,
   useDeleteGrupo,
   useFilterTree,
   useFluxoObrasTodas,
@@ -25,6 +28,7 @@ import {
   useSavePeriodoGrupo,
   useSetLancamentoCategoria,
   useUpdateCustoFinanceiroCategoria,
+  useUpdateCustoFinanceiroRegraPar,
   useUpdateGrupo,
   useUsers,
 } from '@/hooks/useFinanceiro'
@@ -34,7 +38,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, ContaDisponivel, DescricaoDisponivel, LancamentoConta, LancamentoDetalhe } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, ContaDisponivel, DescricaoDisponivel, LancamentoConta, LancamentoDetalhe, RegraParTransferencia } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const CATEGORIA_NAO_CLASSIFICADA = 0
@@ -1764,6 +1768,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
   const [collapsed, setCollapsed] = useState(false)
   const [detalhe, setDetalhe] = useState<{ id: number; nome: string; ano?: number; mes?: number } | null>(null)
   const [gerenciarAberto, setGerenciarAberto] = useState(false)
+  const [regrasParAberto, setRegrasParAberto] = useState(false)
   const currentUser = useAuthStore((s) => s.user)
   const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
   const n = meses.length
@@ -1787,6 +1792,15 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
               onClick={(e) => { e.stopPropagation(); setGerenciarAberto(true) }}
             >
               <Settings2 className="h-3.5 w-3.5" /> Categorias
+            </span>
+          )}
+          {currentUser?.is_admin && (
+            <span
+              role="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-brand"
+              onClick={(e) => { e.stopPropagation(); setRegrasParAberto(true) }}
+            >
+              <Share2 className="h-3.5 w-3.5" /> Contas Especiais
             </span>
           )}
           <span className="text-green-700 font-bold">Ent: {formatCurrency(total_entradas)}</span>
@@ -1925,6 +1939,9 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
 
       {gerenciarAberto && (
         <CategoriasCustoFinanceiroModal onClose={() => setGerenciarAberto(false)} />
+      )}
+      {regrasParAberto && (
+        <RegrasParTransferenciaModal onClose={() => setRegrasParAberto(false)} />
       )}
     </div>
   )
@@ -2620,6 +2637,228 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
       />
     )}
     </>
+  )
+}
+
+// ── Modal: regras por par de conta (Mútuo/Conta Garantida/Aporte/Interno) ───
+
+const REGRA_PAR_VAZIA: Omit<RegraParTransferencia, 'id'> = {
+  empresa_origem: '', empresa_destino: '', banco: '', conta: '', rotulo: '',
+  anular: false, categoria_positiva_id: null, categoria_negativa_id: null,
+}
+
+function RegrasParTransferenciaModal({ onClose }: { onClose: () => void }) {
+  const { data: regras = [] } = useCustoFinanceiroRegrasPar(true)
+  const { data: categorias = [] } = useCustoFinanceiroCategorias()
+  const createRegra = useCreateCustoFinanceiroRegraPar()
+  const updateRegra = useUpdateCustoFinanceiroRegraPar()
+  const deleteRegra = useDeleteCustoFinanceiroRegraPar()
+
+  const [editando, setEditando] = useState<RegraParTransferencia | null>(null)
+  const [criando, setCriando] = useState(false)
+  const [form, setForm] = useState<Omit<RegraParTransferencia, 'id'>>(REGRA_PAR_VAZIA)
+
+  const isPending = createRegra.isPending || updateRegra.isPending
+  const showForm = criando || !!editando
+  const nomeCategoria = (id: number | null) => categorias.find((c) => c.id === id)?.nome ?? '—'
+
+  function startCreate() {
+    setEditando(null)
+    setCriando(true)
+    setForm(REGRA_PAR_VAZIA)
+  }
+
+  function startEdit(r: RegraParTransferencia) {
+    setCriando(false)
+    setEditando(r)
+    setForm({ ...r, rotulo: r.rotulo ?? '' })
+  }
+
+  function cancelForm() {
+    setCriando(false)
+    setEditando(null)
+  }
+
+  function save() {
+    if (!form.empresa_origem.trim() || !form.empresa_destino.trim() || !form.banco.trim() || !form.conta.trim()) return
+    const payload = {
+      ...form,
+      empresa_origem: form.empresa_origem.trim(),
+      empresa_destino: form.empresa_destino.trim(),
+      banco: form.banco.trim(),
+      conta: form.conta.trim(),
+      rotulo: form.rotulo?.trim() || null,
+      categoria_positiva_id: form.anular ? null : form.categoria_positiva_id,
+      categoria_negativa_id: form.anular ? null : form.categoria_negativa_id,
+    }
+    if (editando) {
+      updateRegra.mutate({ id: editando.id, ...payload }, { onSuccess: cancelForm })
+    } else {
+      createRegra.mutate(payload, { onSuccess: cancelForm })
+    }
+  }
+
+  function handleDelete(r: RegraParTransferencia) {
+    if (!confirm(`Excluir a regra de ${r.empresa_origem} → ${r.empresa_destino} (banco ${r.banco} / conta ${r.conta})?`)) return
+    deleteRegra.mutate(r.id)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white block-border max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
+          <div>
+            <span className="text-xs font-black uppercase tracking-widest text-dark">Contas Especiais de Transferência</span>
+            <p className="text-[10px] text-muted-foreground">
+              Regras por par de empresa + conta (Mútuo, Conta Garantida, Aporte, Interno) — têm prioridade sobre as regras por conta única e por descrição.
+            </p>
+          </div>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
+        </div>
+
+        <div className="overflow-auto flex-1 p-4 space-y-4">
+          {!showForm && (
+            <>
+              <button
+                className="flex items-center gap-1.5 text-xs font-bold text-brand hover:underline"
+                onClick={startCreate}
+              >
+                <Plus className="h-3.5 w-3.5" /> Nova regra
+              </button>
+              <div className="border-2 border-grid divide-y-2 divide-grid">
+                {regras.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between px-3 py-2 text-xs gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-dark">{r.empresa_origem} → {r.empresa_destino}</span>
+                        <span className="text-muted-foreground">Banco {r.banco} / Conta {r.conta}</span>
+                        {r.rotulo && <span className="text-[9px] uppercase font-bold text-muted-foreground border border-grid px-1">{r.rotulo}</span>}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {r.anular ? (
+                          <span className="text-amber-600 font-bold">Anular — suprimido do card</span>
+                        ) : (
+                          <>
+                            <span className="text-green-700">(+) {nomeCategoria(r.categoria_positiva_id)}</span>
+                            {' '}/{' '}
+                            <span className="text-red-700">(-) {nomeCategoria(r.categoria_negativa_id)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => startEdit(r)}><Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-brand" /></button>
+                      <button onClick={() => handleDelete(r)}><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-600" /></button>
+                    </div>
+                  </div>
+                ))}
+                {regras.length === 0 && (
+                  <p className="px-3 py-4 text-xs text-muted-foreground">Nenhuma regra cadastrada.</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {showForm && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Empresa Origem</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={form.empresa_origem}
+                    onChange={(e) => setForm((f) => ({ ...f, empresa_origem: e.target.value }))}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Empresa Destino</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={form.empresa_destino}
+                    onChange={(e) => setForm((f) => ({ ...f, empresa_destino: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Banco</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={form.banco}
+                    onChange={(e) => setForm((f) => ({ ...f, banco: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Conta</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={form.conta}
+                    onChange={(e) => setForm((f) => ({ ...f, conta: e.target.value }))}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-dark">Rótulo (opcional, ex.: Mutuo, CG, Aporte, Interno)</label>
+                  <input
+                    className="w-full text-xs border-2 border-grid px-2 py-1.5 focus:outline-none focus:border-brand"
+                    value={form.rotulo ?? ''}
+                    onChange={(e) => setForm((f) => ({ ...f, rotulo: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs font-bold text-dark cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-brand"
+                  checked={form.anular}
+                  onChange={(e) => setForm((f) => ({ ...f, anular: e.target.checked }))}
+                />
+                Anular — suprimir esses lançamentos do card (não é fluxo de caixa real)
+              </label>
+
+              {!form.anular && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-dark">Categoria quando valor positivo (entrada)</label>
+                    <select
+                      className="w-full text-xs border-2 border-grid px-2 py-1.5 bg-white focus:outline-none focus:border-brand"
+                      value={form.categoria_positiva_id ?? ''}
+                      onChange={(e) => setForm((f) => ({ ...f, categoria_positiva_id: e.target.value ? Number(e.target.value) : null }))}
+                    >
+                      <option value="">Não Classificado</option>
+                      {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-dark">Categoria quando valor negativo (saída)</label>
+                    <select
+                      className="w-full text-xs border-2 border-grid px-2 py-1.5 bg-white focus:outline-none focus:border-brand"
+                      value={form.categoria_negativa_id ?? ''}
+                      onChange={(e) => setForm((f) => ({ ...f, categoria_negativa_id: e.target.value ? Number(e.target.value) : null }))}
+                    >
+                      <option value="">Não Classificado</option>
+                      {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  className="text-xs font-bold bg-brand text-white px-3 py-1.5 hover:bg-brand/90 disabled:opacity-50"
+                  onClick={save}
+                  disabled={!form.empresa_origem.trim() || !form.empresa_destino.trim() || !form.banco.trim() || !form.conta.trim() || isPending}
+                >
+                  Salvar
+                </button>
+                <button className="text-xs font-bold text-muted-foreground px-3 py-1.5 hover:text-dark" onClick={cancelForm}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -5,7 +5,7 @@ import type {
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
   UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, DescricaoDisponivel, LancamentoDetalhe,
-  LancamentoConta, ContaDisponivel,
+  LancamentoConta, ContaDisponivel, RegraParTransferencia,
 } from '@/types'
 
 export function useAP() {
@@ -274,6 +274,7 @@ function invalidateCustoFinanceiro(queryClient: ReturnType<typeof useQueryClient
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricao-lancamentos'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-conta-lancamentos'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-regras-par'], refetchType: 'all' })
 }
 
 export function useCreateCustoFinanceiroCategoria() {
@@ -296,6 +297,38 @@ export function useDeleteCustoFinanceiroCategoria() {
   const queryClient = useQueryClient()
   return useMutation<void, Error, number>({
     mutationFn: (id) => api.delete(`/fluxo-obras/custo-financeiro/categorias/${id}`),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useCustoFinanceiroRegrasPar(enabled: boolean) {
+  return useQuery<RegraParTransferencia[]>({
+    queryKey: ['custo-financeiro-regras-par'],
+    enabled,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/regras-par'),
+  })
+}
+
+export function useCreateCustoFinanceiroRegraPar() {
+  const queryClient = useQueryClient()
+  return useMutation<RegraParTransferencia | null, Error, Omit<RegraParTransferencia, 'id'>>({
+    mutationFn: (body) => api.post('/fluxo-obras/custo-financeiro/regras-par', body),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useUpdateCustoFinanceiroRegraPar() {
+  const queryClient = useQueryClient()
+  return useMutation<RegraParTransferencia | null, Error, RegraParTransferencia>({
+    mutationFn: ({ id, ...body }) => api.put(`/fluxo-obras/custo-financeiro/regras-par/${id}`, body),
+    onSuccess: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
+export function useDeleteCustoFinanceiroRegraPar() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, number>({
+    mutationFn: (id) => api.delete(`/fluxo-obras/custo-financeiro/regras-par/${id}`),
     onSuccess: () => invalidateCustoFinanceiro(queryClient),
   })
 }

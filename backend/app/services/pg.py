@@ -133,6 +133,21 @@ CREATE TABLE IF NOT EXISTS custo_financeiro_categoria_contas (
     PRIMARY KEY (empresa, banco, conta)
 );
 
+CREATE TABLE IF NOT EXISTS custo_financeiro_regra_par_transferencia (
+    id                    SERIAL PRIMARY KEY,
+    empresa_origem        VARCHAR(200) NOT NULL,
+    empresa_destino       VARCHAR(200) NOT NULL,
+    banco                 VARCHAR(50)  NOT NULL,
+    conta                 VARCHAR(50)  NOT NULL,
+    rotulo                VARCHAR(50),
+    anular                BOOLEAN NOT NULL DEFAULT FALSE,
+    categoria_positiva_id INTEGER REFERENCES custo_financeiro_categorias(id) ON DELETE SET NULL,
+    categoria_negativa_id INTEGER REFERENCES custo_financeiro_categorias(id) ON DELETE SET NULL,
+    updated_at            TIMESTAMP DEFAULT NOW(),
+    updated_by            INTEGER REFERENCES users(id),
+    UNIQUE (empresa_origem, empresa_destino, banco, conta)
+);
+
 CREATE TABLE IF NOT EXISTS custo_financeiro_lancamento_overrides (
     lancamento_id VARCHAR(64) PRIMARY KEY,
     categoria_id  INTEGER NOT NULL REFERENCES custo_financeiro_categorias(id) ON DELETE CASCADE,
@@ -230,6 +245,7 @@ async def init_tables():
         await _migrate_grupos_periodo_padrao(conn)
         await _migrate_grupos_custo_financeiro(conn)
         await _seed_custo_financeiro_categorias(conn)
+        await _seed_regras_par_transferencia(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
 
 
@@ -326,6 +342,93 @@ async def _seed_custo_financeiro_categorias(conn):
         _DEFAULT_CATEGORIAS,
     )
     log.info("Seed custo_financeiro_categorias: categorias padrão inseridas")
+
+
+async def _get_or_create_categoria(conn, nome: str, sinal: str, ordem: int) -> int:
+    row = await conn.fetchrow("SELECT id FROM custo_financeiro_categorias WHERE nome=$1", nome)
+    if row:
+        return row["id"]
+    row = await conn.fetchrow(
+        "INSERT INTO custo_financeiro_categorias (nome, sinal, ordem) VALUES ($1,$2,$3) RETURNING id",
+        nome, sinal, ordem,
+    )
+    return row["id"]
+
+
+# (empresa_origem, empresa_destino, banco, conta, rotulo, anular, categoria_positiva, categoria_negativa)
+# categoria_positiva/negativa: None quando anular=True
+_REGRAS_PAR_TRANSFERENCIA = [
+    ("COMBRASEN", "COMBRASEN", "70", "46032", "CG", False,
+     "Empréstimos tomados - Conta Garantida", "Empréstimos pagos - Conta Garantida"),
+    ("COMBRASEN", "COMBRASEN", "341", "19721-2", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "341", "30333-1", "CG", False,
+     "Empréstimos tomados - Conta Garantida", "Empréstimos pagos - Conta Garantida"),
+    ("COMBRASEN", "COMBRASEN", "341", "14632-6", "CG", False,
+     "Empréstimos tomados - Conta Garantida", "Empréstimos pagos - Conta Garantida"),
+    ("COMBRASEN", "COMBRASEN", "998", "12190-7", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "998", "321-2", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "998", "444-1", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "998", "50249-9", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "998", "555-1", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "998", "13000360-7", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "COMBRASEN", "341", "12190-7", "Interno", True, None, None),
+    ("COMBRASEN", "COMBRASEN", "341", "01557-3", "Interno", True, None, None),
+    ("COMBRASEN", "COMBRASEN", "70", "003924-8", "Interno", True, None, None),
+    ("COMBRASEN", "COMBRASEN", "102", "1688659-6", "Interno", True, None, None),
+    ("COMBRASEN", "COMBRASEN", "102", "16888659-6A", "Interno", True, None, None),
+    ("COMBRASEN", "COMBRASEN", "208", "448329-5", "Interno", True, None, None),
+    ("COMBRASEN", "TRUST", "208", "1588254-1", "Interno", True, None, None),
+    ("COMBRASEN", "TRUST", "756", "9192-8", "Interno", True, None, None),
+    ("COMBRASEN", "TRUST", "756", "15041-0", "Mutuo", False,
+     "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
+    ("COMBRASEN", "TRUST", "208", "913155-2", "Aporte", False,
+     "Devolução de aportes da GAMA 01 SPE", "Aportes para GAMA 01 SPE"),
+    ("COMBRASEN", "GAMA 01", "70", "9119-3", "Aporte", False,
+     "Devolução de aportes da GAMA 01 SPE", "Aportes para GAMA 01 SPE"),
+    ("COMBRASEN", "CONSÓRCIO HMSJ", "70", "9333-1", "Aporte", False,
+     "Devolução de aportes CONSÓRCIO HMSJ", "Aportes para CONSÓRCIO HMSJ"),
+]
+
+
+async def _seed_regras_par_transferencia(conn):
+    """One-time: cadastra as regras por par (empresa_origem, empresa_destino, banco, conta) de contas
+    especiais (Mútuo, Conta Garantida, Aporte, Interno) se a tabela estiver vazia. Cadastros/edições
+    seguintes são feitos manualmente pela UI de administração."""
+    existing = await conn.fetchval("SELECT COUNT(*) FROM custo_financeiro_regra_par_transferencia")
+    if existing:
+        return
+
+    categoria_ids: dict[str, int] = {}
+    ordem_base = 100
+    for emp_o, emp_d, banco, conta, rotulo, anular, nome_pos, nome_neg in _REGRAS_PAR_TRANSFERENCIA:
+        for nome in (nome_pos, nome_neg):
+            if nome is not None and nome not in categoria_ids:
+                sinal = "entrada" if nome == nome_pos else "saida"
+                categoria_ids[nome] = await _get_or_create_categoria(conn, nome, sinal, ordem_base)
+                ordem_base += 1
+
+    await conn.executemany(
+        """INSERT INTO custo_financeiro_regra_par_transferencia
+           (empresa_origem, empresa_destino, banco, conta, rotulo, anular, categoria_positiva_id, categoria_negativa_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (empresa_origem, empresa_destino, banco, conta) DO NOTHING""",
+        [
+            (
+                emp_o, emp_d, banco, conta, rotulo, anular,
+                categoria_ids.get(nome_pos) if nome_pos else None,
+                categoria_ids.get(nome_neg) if nome_neg else None,
+            )
+            for emp_o, emp_d, banco, conta, rotulo, anular, nome_pos, nome_neg in _REGRAS_PAR_TRANSFERENCIA
+        ],
+    )
+    log.info("Seed custo_financeiro_regra_par_transferencia: %d regras inseridas", len(_REGRAS_PAR_TRANSFERENCIA))
 
 
 def _pool_conn():
@@ -1272,6 +1375,64 @@ async def update_custo_financeiro_categoria(
 async def delete_custo_financeiro_categoria(categoria_id: int) -> None:
     async with _pool.acquire() as conn:
         await conn.execute("DELETE FROM custo_financeiro_categorias WHERE id=$1", categoria_id)
+
+
+# ── Custo Financeiro — Regras por par de conta (Mútuo/CG/Aporte/Interno) ────
+
+async def get_custo_financeiro_regras_par() -> list[dict]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+                      categoria_positiva_id, categoria_negativa_id
+               FROM custo_financeiro_regra_par_transferencia
+               ORDER BY empresa_origem, empresa_destino, banco, conta"""
+        )
+    return [dict(r) for r in rows]
+
+
+async def create_custo_financeiro_regra_par(
+    empresa_origem: str, empresa_destino: str, banco: str, conta: str,
+    rotulo: str | None, anular: bool,
+    categoria_positiva_id: int | None, categoria_negativa_id: int | None,
+    user_id: int,
+) -> dict:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO custo_financeiro_regra_par_transferencia
+               (empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+                categoria_positiva_id, categoria_negativa_id, updated_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+               RETURNING id, empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+                         categoria_positiva_id, categoria_negativa_id""",
+            empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+            categoria_positiva_id, categoria_negativa_id, user_id,
+        )
+    return dict(row)
+
+
+async def update_custo_financeiro_regra_par(
+    regra_id: int, empresa_origem: str, empresa_destino: str, banco: str, conta: str,
+    rotulo: str | None, anular: bool,
+    categoria_positiva_id: int | None, categoria_negativa_id: int | None,
+    user_id: int,
+) -> dict | None:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE custo_financeiro_regra_par_transferencia
+               SET empresa_origem=$2, empresa_destino=$3, banco=$4, conta=$5, rotulo=$6, anular=$7,
+                   categoria_positiva_id=$8, categoria_negativa_id=$9, updated_at=NOW(), updated_by=$10
+               WHERE id=$1
+               RETURNING id, empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+                         categoria_positiva_id, categoria_negativa_id""",
+            regra_id, empresa_origem, empresa_destino, banco, conta, rotulo, anular,
+            categoria_positiva_id, categoria_negativa_id, user_id,
+        )
+    return dict(row) if row else None
+
+
+async def delete_custo_financeiro_regra_par(regra_id: int) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute("DELETE FROM custo_financeiro_regra_par_transferencia WHERE id=$1", regra_id)
 
 
 async def get_custo_financeiro_overrides() -> dict[str, int]:

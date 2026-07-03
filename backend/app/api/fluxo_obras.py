@@ -28,6 +28,8 @@ from app.models.schemas import (
     LancamentoConta,
     LancamentoDetalhe,
     PlanejamentoLogEntry,
+    RegraParTransferencia,
+    RegraParTransferenciaIn,
     SaveObraPlanejamentoIn,
     SetLancamentoCategoriaIn,
 )
@@ -557,7 +559,9 @@ async def _lancamentos_classificados(
     slots_set: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento.
-    Transferências: override manual > regra por conta > regra por descrição > não classificado.
+    Transferências: override manual > regra por par de conta (Mútuo/CG/Aporte/Interno) > regra por
+    conta única > regra por descrição > não classificado. "Interno" (anular) suprime o lançamento por
+    completo, a menos que já exista um override manual explícito para ele.
     Controle financeiro: sempre forçado pelo sentido (entrada > Receitas financeiras, saída > Despesas
     financeiras), ignorando regra por descrição e override manual."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
@@ -578,6 +582,10 @@ async def _lancamentos_classificados(
     despesas_fin_id = next(
         (c["id"] for c in categorias if c["nome"].strip().lower() == "despesas financeiras"), None
     )
+    regras_par = await pg.get_custo_financeiro_regras_par()
+    par_map: dict[tuple[str, str, str, str], dict] = {
+        (r["empresa_origem"], r["empresa_destino"], r["banco"], r["conta"]): r for r in regras_par
+    }
 
     out: list[dict] = []
     for item in transf_raw + controle_raw:
@@ -595,11 +603,29 @@ async def _lancamentos_classificados(
             continue
         if slots_set is not None and (dt.year, dt.month) not in slots_set:
             continue
+
+        par = None
+        if item["tipo"] == "transferencia":
+            o, d = item.get("origem"), item.get("destino")
+            if o and d:
+                par = (
+                    par_map.get((o["empresa"], d["empresa"], o["banco"], o["conta"]))
+                    or par_map.get((o["empresa"], d["empresa"], d["banco"], d["conta"]))
+                )
+
+        override_id = overrides.get(item["id"])
+        if par and par["anular"] and override_id is None:
+            continue
+
         if item["tipo"] == "controle":
             categoria_id = receitas_fin_id if item["sentido"] == "entrada" else despesas_fin_id
         else:
+            par_categoria_id = None
+            if par and not par["anular"]:
+                par_categoria_id = par["categoria_positiva_id"] if item["sentido"] == "entrada" else par["categoria_negativa_id"]
             categoria_id = (
-                overrides.get(item["id"])
+                override_id
+                or par_categoria_id
                 or conta_regra_map.get((item["empresa"], item["banco"], item["conta"]))
                 or regra_map.get((item["tipo"], item["descricao"]))
             )
@@ -943,3 +969,38 @@ async def update_custo_financeiro_categoria(
 @router.delete("/custo-financeiro/categorias/{categoria_id}", status_code=204)
 async def delete_custo_financeiro_categoria(categoria_id: int, user: UserOut = Depends(require_admin)):
     await pg.delete_custo_financeiro_categoria(categoria_id)
+
+
+@router.get("/custo-financeiro/regras-par", response_model=list[RegraParTransferencia])
+async def list_custo_financeiro_regras_par(user: UserOut = Depends(require_admin)):
+    return await pg.get_custo_financeiro_regras_par()
+
+
+@router.post("/custo-financeiro/regras-par", response_model=RegraParTransferencia, status_code=201)
+async def create_custo_financeiro_regra_par(
+    body: RegraParTransferenciaIn, user: UserOut = Depends(require_admin),
+):
+    return await pg.create_custo_financeiro_regra_par(
+        body.empresa_origem, body.empresa_destino, body.banco, body.conta,
+        body.rotulo, body.anular, body.categoria_positiva_id, body.categoria_negativa_id,
+        user.id,
+    )
+
+
+@router.put("/custo-financeiro/regras-par/{regra_id}", response_model=RegraParTransferencia)
+async def update_custo_financeiro_regra_par(
+    regra_id: int, body: RegraParTransferenciaIn, user: UserOut = Depends(require_admin),
+):
+    result = await pg.update_custo_financeiro_regra_par(
+        regra_id, body.empresa_origem, body.empresa_destino, body.banco, body.conta,
+        body.rotulo, body.anular, body.categoria_positiva_id, body.categoria_negativa_id,
+        user.id,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Regra não encontrada")
+    return result
+
+
+@router.delete("/custo-financeiro/regras-par/{regra_id}", status_code=204)
+async def delete_custo_financeiro_regra_par(regra_id: int, user: UserOut = Depends(require_admin)):
+    await pg.delete_custo_financeiro_regra_par(regra_id)

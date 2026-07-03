@@ -239,3 +239,18 @@ class ContaDisponivel(BaseModel):
     conta: str
     categoria_id: int | None = None
     sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa conta
+
+
+class RegraParTransferenciaIn(BaseModel):
+    empresa_origem: str
+    empresa_destino: str
+    banco: str
+    conta: str
+    rotulo: str | None = None
+    anular: bool = False
+    categoria_positiva_id: int | None = None
+    categoria_negativa_id: int | None = None
+
+
+class RegraParTransferencia(RegraParTransferenciaIn):
+    id: int
