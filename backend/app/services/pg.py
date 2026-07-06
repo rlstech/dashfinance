@@ -325,10 +325,7 @@ async def _migrate_grupos_custo_financeiro(conn):
 
 _DEFAULT_CATEGORIAS = [
     ("Receitas financeiras", "entrada", 1),
-    ("Empréstimos tomados", "entrada", 2),
-    ("Empréstimos pagos", "saida", 3),
-    ("Aportes GAMA 01", "saida", 4),
-    ("Despesas financeiras", "saida", 5),
+    ("Despesas financeiras", "saida", 2),
 ]
 
 
