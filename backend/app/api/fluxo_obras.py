@@ -10,13 +10,11 @@ from app.models.auth import UserOut
 from app.models.schemas import (
     AtualizarFluxoRealIn,
     BulkImportResult,
-    ContaDisponivel,
     CustoFinanceiroCategoria,
     CustoFinanceiroCategoriaIn,
     CustoFinanceiroCategoriaLinha,
     CustoFinanceiroResponse,
     CustoFinanceiroSlot,
-    DescricaoDisponivel,
     FluxoMesRow,
     FluxoPlanejamentoResponse,
     FluxoRealCachedResponse,
@@ -559,22 +557,15 @@ async def _lancamentos_classificados(
     slots_set: set[tuple[int, int]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento.
-    Transferências: override manual > regra por par de conta (Mútuo/CG/Aporte/Interno) > regra por
-    conta única > regra por descrição > não classificado. "Interno" (anular) suprime o lançamento por
-    completo, a menos que já exista um override manual explícito para ele.
+    Transferências: override manual > regra por par de conta (Mútuo/CG/Aporte/Interno) > não
+    classificado. "Interno" (anular) suprime o lançamento por completo, a menos que já exista um
+    override manual explícito para ele.
     Controle financeiro: sempre forçado pelo sentido (entrada > Receitas financeiras, saída > Despesas
-    financeiras), ignorando regra por descrição e override manual."""
+    financeiras), ignorando override manual."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
     controle_raw: list[dict] = await get_cached("dash:controle:all") or []
 
     categorias = await pg.get_custo_financeiro_categorias()
-    regra_map: dict[tuple[str, str], int] = {}
-    conta_regra_map: dict[tuple[str, str, str], int] = {}
-    for cat in categorias:
-        for d in cat["descricoes"]:
-            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
-        for c in cat["contas"]:
-            conta_regra_map[(c["empresa"], c["banco"], c["conta"])] = cat["id"]
     overrides = await pg.get_custo_financeiro_overrides()
     receitas_fin_id = next(
         (c["id"] for c in categorias if c["nome"].strip().lower() == "receitas financeiras"), None
@@ -623,12 +614,7 @@ async def _lancamentos_classificados(
             par_categoria_id = None
             if par and not par["anular"]:
                 par_categoria_id = par["categoria_positiva_id"] if item["sentido"] == "entrada" else par["categoria_negativa_id"]
-            categoria_id = (
-                override_id
-                or par_categoria_id
-                or conta_regra_map.get((item["empresa"], item["banco"], item["conta"]))
-                or regra_map.get((item["tipo"], item["descricao"]))
-            )
+            categoria_id = override_id or par_categoria_id
         out.append({**item, "categoria_id": categoria_id, "_dt": dt})
     return out, categorias
 
@@ -754,163 +740,6 @@ async def set_custo_financeiro_lancamento_categoria(
 ):
     """Reclassifica manualmente um lançamento (transferência ou controle financeiro) para outra categoria."""
     await pg.set_lancamento_categoria(lancamento_id, body.categoria_id, user.id)
-
-
-@router.get("/custo-financeiro/descricoes", response_model=list[DescricaoDisponivel])
-async def get_custo_financeiro_descricoes(user: UserOut = Depends(require_admin)):
-    """Lista as descrições/naturezas distintas presentes nos dados, com a categoria já atribuída (se houver)
-    e o sinal observado nos lançamentos (entrada, saída ou mista). Usado para montar a UI de gerenciamento
-    de categorias e orientar o usuário sobre a que sinal cada descrição costuma pertencer.
-    Controle financeiro é excluído: sua categoria é sempre forçada pelo sentido, não por regra de descrição."""
-    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-
-    categorias = await pg.get_custo_financeiro_categorias()
-    regra_map: dict[tuple[str, str], int] = {}
-    for cat in categorias:
-        for d in cat["descricoes"]:
-            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
-
-    sentidos_por_desc: dict[tuple[str, str], set[str]] = {}
-    for item in transf_raw:
-        key = (item["tipo"], item["descricao"])
-        sentidos_por_desc.setdefault(key, set()).add(item["sentido"])
-
-    out: list[DescricaoDisponivel] = []
-    for key, sentidos in sentidos_por_desc.items():
-        sentido = sentidos.pop() if len(sentidos) == 1 else "mista"
-        out.append(DescricaoDisponivel(
-            tipo=key[0], descricao=key[1], categoria_id=regra_map.get(key), sentido=sentido,
-        ))
-    out.sort(key=lambda d: (d.tipo, d.descricao))
-    return out
-
-
-@router.get("/custo-financeiro/contas-disponiveis", response_model=list[ContaDisponivel])
-async def get_custo_financeiro_contas_disponiveis(user: UserOut = Depends(require_admin)):
-    """Lista as contas (empresa, banco, conta) distintas presentes nos dados de Transferências Bancárias,
-    com a categoria já atribuída (se houver) e o sinal observado nos lançamentos. Usado para montar a UI
-    de gerenciamento de categorias por conta bancária."""
-    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-
-    categorias = await pg.get_custo_financeiro_categorias()
-    conta_regra_map: dict[tuple[str, str, str], int] = {}
-    for cat in categorias:
-        for c in cat["contas"]:
-            conta_regra_map[(c["empresa"], c["banco"], c["conta"])] = cat["id"]
-
-    sentidos_por_conta: dict[tuple[str, str, str], set[str]] = {}
-    for item in transf_raw:
-        key = (item["empresa"], item["banco"], item["conta"])
-        sentidos_por_conta.setdefault(key, set()).add(item["sentido"])
-
-    out: list[ContaDisponivel] = []
-    for key, sentidos in sentidos_por_conta.items():
-        sentido = sentidos.pop() if len(sentidos) == 1 else "mista"
-        out.append(ContaDisponivel(
-            empresa=key[0], banco=key[1], conta=key[2], categoria_id=conta_regra_map.get(key), sentido=sentido,
-        ))
-    out.sort(key=lambda c: (c.empresa, c.banco, c.conta))
-    return out
-
-
-@router.get("/custo-financeiro/descricao-lancamentos", response_model=list[LancamentoDetalhe])
-async def get_custo_financeiro_descricao_lancamentos(
-    tipo: str, descricao: str, user: UserOut = Depends(require_admin),
-):
-    """Prévia dos lançamentos brutos de uma descrição específica, independente de já estar classificada
-    em categoria — ajuda a decidir a categoria e o sinal corretos antes de salvar a regra."""
-    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-    controle_raw: list[dict] = await get_cached("dash:controle:all") or []
-
-    categorias = await pg.get_custo_financeiro_categorias()
-    regra_map: dict[tuple[str, str], int] = {}
-    for cat in categorias:
-        for d in cat["descricoes"]:
-            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
-    overrides = await pg.get_custo_financeiro_overrides()
-
-    def _dt(item: dict) -> datetime:
-        try:
-            return datetime.strptime(item["data"], "%d/%m/%Y")
-        except (ValueError, TypeError):
-            return datetime.min
-
-    matched = [
-        item for item in (transf_raw + controle_raw)
-        if item["tipo"] == tipo and item["descricao"] == descricao
-    ]
-    matched.sort(key=_dt, reverse=True)
-    matched = matched[:200]
-
-    return [
-        LancamentoDetalhe(
-            id=item["id"],
-            tipo=item["tipo"],
-            data=item["data"],
-            descricao=item["descricao"],
-            valor=item["valor"],
-            sentido=item["sentido"],
-            origem=item.get("origem"),
-            destino=item.get("destino"),
-            banco=item["banco"],
-            conta=item["conta"],
-            categoria_id=overrides.get(item["id"]) or regra_map.get((item["tipo"], item["descricao"])),
-        )
-        for item in matched
-    ]
-
-
-@router.get("/custo-financeiro/conta-lancamentos", response_model=list[LancamentoDetalhe])
-async def get_custo_financeiro_conta_lancamentos(
-    empresa: str, banco: str, conta: str, user: UserOut = Depends(require_admin),
-):
-    """Prévia dos lançamentos brutos de transferência de uma conta específica, independente de já estar
-    classificada em categoria — ajuda a decidir a categoria e o sinal corretos antes de salvar a regra."""
-    transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
-
-    categorias = await pg.get_custo_financeiro_categorias()
-    regra_map: dict[tuple[str, str], int] = {}
-    conta_regra_map: dict[tuple[str, str, str], int] = {}
-    for cat in categorias:
-        for d in cat["descricoes"]:
-            regra_map[(d["tipo"], d["descricao"])] = cat["id"]
-        for c in cat["contas"]:
-            conta_regra_map[(c["empresa"], c["banco"], c["conta"])] = cat["id"]
-    overrides = await pg.get_custo_financeiro_overrides()
-
-    def _dt(item: dict) -> datetime:
-        try:
-            return datetime.strptime(item["data"], "%d/%m/%Y")
-        except (ValueError, TypeError):
-            return datetime.min
-
-    matched = [
-        item for item in transf_raw
-        if item["empresa"] == empresa and item["banco"] == banco and item["conta"] == conta
-    ]
-    matched.sort(key=_dt, reverse=True)
-    matched = matched[:200]
-
-    return [
-        LancamentoDetalhe(
-            id=item["id"],
-            tipo=item["tipo"],
-            data=item["data"],
-            descricao=item["descricao"],
-            valor=item["valor"],
-            sentido=item["sentido"],
-            origem=item.get("origem"),
-            destino=item.get("destino"),
-            banco=item["banco"],
-            conta=item["conta"],
-            categoria_id=(
-                overrides.get(item["id"])
-                or conta_regra_map.get((empresa, banco, conta))
-                or regra_map.get((item["tipo"], item["descricao"]))
-            ),
-        )
-        for item in matched
-    ]
 
 
 @router.get("/custo-financeiro/transferencias-contas", response_model=list[LancamentoConta])

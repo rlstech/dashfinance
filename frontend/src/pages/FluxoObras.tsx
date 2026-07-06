@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, Eye, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
@@ -7,10 +7,6 @@ import {
   useCreateCustoFinanceiroRegraPar,
   useCustoFinanceiro,
   useCustoFinanceiroCategorias,
-  useCustoFinanceiroContaLancamentos,
-  useCustoFinanceiroContasDisponiveis,
-  useCustoFinanceiroDescricaoLancamentos,
-  useCustoFinanceiroDescricoes,
   useCustoFinanceiroLancamentos,
   useCustoFinanceiroRegrasPar,
   useCustoFinanceiroTransferenciasContas,
@@ -38,7 +34,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, CategoriaDescricaoItem, ContaDisponivel, DescricaoDisponivel, LancamentoConta, LancamentoDetalhe, RegraParTransferencia } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoConta, LancamentoDetalhe, RegraParTransferencia } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const CATEGORIA_NAO_CLASSIFICADA = 0
@@ -2077,89 +2073,10 @@ function LancamentosModal({
   )
 }
 
-// ── Modal: prévia de lançamentos de uma descrição (antes de classificar) ────
-
-function DescricaoLancamentosModal({
-  tipo, descricao, onClose,
-}: {
-  tipo: 'transferencia' | 'controle'
-  descricao: string
-  onClose: () => void
-}) {
-  const { data: lancamentos = [], isLoading } = useCustoFinanceiroDescricaoLancamentos(tipo, descricao, true)
-  const { data: categorias = [] } = useCustoFinanceiroCategorias()
-  const setCategoria = useSetLancamentoCategoria()
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
-          <div className="min-w-0">
-            <span className="text-xs font-black uppercase tracking-widest text-dark truncate block">{descricao}</span>
-            <span className="text-[10px] text-muted-foreground">
-              {tipo === 'transferencia' ? 'Transferência Bancária' : 'Controle Financeiro'} — últimos lançamentos (máx. 200)
-            </span>
-          </div>
-          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark flex-shrink-0" /></button>
-        </div>
-        <div className="overflow-auto flex-1">
-          <LancamentosTable
-            lancamentos={lancamentos}
-            isLoading={isLoading}
-            emptyMessage="Nenhum lançamento encontrado para essa descrição."
-            categorias={categorias}
-            isAdmin
-            onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ContaLancamentosModal({
-  conta, onClose,
-}: {
-  conta: LancamentoConta
-  onClose: () => void
-}) {
-  const { data: lancamentos = [], isLoading } = useCustoFinanceiroContaLancamentos(conta, true)
-  const { data: categorias = [] } = useCustoFinanceiroCategorias()
-  const setCategoria = useSetLancamentoCategoria()
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
-          <div className="min-w-0">
-            <span className="text-xs font-black uppercase tracking-widest text-dark truncate block">
-              {conta.empresa} — Banco {conta.banco} / Conta {conta.conta}
-            </span>
-            <span className="text-[10px] text-muted-foreground">Transferência Bancária — últimos lançamentos (máx. 200)</span>
-          </div>
-          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark flex-shrink-0" /></button>
-        </div>
-        <div className="overflow-auto flex-1">
-          <LancamentosTable
-            lancamentos={lancamentos}
-            isLoading={isLoading}
-            emptyMessage="Nenhum lançamento encontrado para essa conta."
-            categorias={categorias}
-            isAdmin
-            onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Modal: gerenciar categorias de Custo Financeiro (admin) ─────────────────
 
 function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const { data: categorias = [] } = useCustoFinanceiroCategorias()
-  const { data: descricoes = [] } = useCustoFinanceiroDescricoes(true)
-  const { data: contasDisponiveis = [] } = useCustoFinanceiroContasDisponiveis(true)
   const createCategoria = useCreateCustoFinanceiroCategoria()
   const updateCategoria = useUpdateCustoFinanceiroCategoria()
   const deleteCategoria = useDeleteCustoFinanceiroCategoria()
@@ -2169,72 +2086,8 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
   const [nome, setNome] = useState('')
   const [sinal, setSinal] = useState<'entrada' | 'saida'>('saida')
   const [ordem, setOrdem] = useState(0)
-  const [descSel, setDescSel] = useState<CategoriaDescricaoItem[]>([])
-  const [busca, setBusca] = useState('')
-  const [apenasNaoClassificadas, setApenasNaoClassificadas] = useState(false)
-  const [filtroSentido, setFiltroSentido] = useState<'todos' | 'entrada' | 'saida' | 'mista'>('todos')
-  const [preview, setPreview] = useState<{ tipo: 'transferencia' | 'controle'; descricao: string } | null>(null)
-  const [contaSel, setContaSel] = useState<LancamentoConta[]>([])
-  const [buscaConta, setBuscaConta] = useState('')
-  const [apenasNaoClassificadasConta, setApenasNaoClassificadasConta] = useState(false)
-  const [filtroSentidoConta, setFiltroSentidoConta] = useState<'todos' | 'entrada' | 'saida' | 'mista'>('todos')
-  const [previewConta, setPreviewConta] = useState<LancamentoConta | null>(null)
 
   const isPending = createCategoria.isPending || updateCategoria.isPending
-
-  const descricoesFiltradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    return descricoes.filter((d) => {
-      if (apenasNaoClassificadas && d.categoria_id != null) return false
-      if (filtroSentido !== 'todos' && d.sentido !== filtroSentido) return false
-      if (termo && !d.descricao.toLowerCase().includes(termo)) return false
-      return true
-    })
-  }, [descricoes, busca, apenasNaoClassificadas, filtroSentido])
-
-  const contasFiltradas = useMemo(() => {
-    const termo = buscaConta.trim().toLowerCase()
-    return contasDisponiveis.filter((c) => {
-      if (apenasNaoClassificadasConta && c.categoria_id != null) return false
-      if (filtroSentidoConta !== 'todos' && c.sentido !== filtroSentidoConta) return false
-      if (termo && !`${c.empresa} ${c.banco} ${c.conta}`.toLowerCase().includes(termo)) return false
-      return true
-    })
-  }, [contasDisponiveis, buscaConta, apenasNaoClassificadasConta, filtroSentidoConta])
-
-  function marcarTodosVisiveis() {
-    setDescSel((prev) => {
-      const prevKeys = new Set(prev.map((d) => `${d.tipo}|${d.descricao}`))
-      const adicionar = descricoesFiltradas
-        .filter((d) => !prevKeys.has(`${d.tipo}|${d.descricao}`))
-        .map((d) => ({ tipo: d.tipo, descricao: d.descricao }))
-      return [...prev, ...adicionar]
-    })
-  }
-
-  function desmarcarTodosVisiveis() {
-    setDescSel((prev) => {
-      const visKeys = new Set(descricoesFiltradas.map((d) => `${d.tipo}|${d.descricao}`))
-      return prev.filter((d) => !visKeys.has(`${d.tipo}|${d.descricao}`))
-    })
-  }
-
-  function marcarTodasVisiveisContas() {
-    setContaSel((prev) => {
-      const prevKeys = new Set(prev.map((c) => `${c.empresa}|${c.banco}|${c.conta}`))
-      const adicionar = contasFiltradas
-        .filter((c) => !prevKeys.has(`${c.empresa}|${c.banco}|${c.conta}`))
-        .map((c) => ({ empresa: c.empresa, banco: c.banco, conta: c.conta }))
-      return [...prev, ...adicionar]
-    })
-  }
-
-  function desmarcarTodasVisiveisContas() {
-    setContaSel((prev) => {
-      const visKeys = new Set(contasFiltradas.map((c) => `${c.empresa}|${c.banco}|${c.conta}`))
-      return prev.filter((c) => !visKeys.has(`${c.empresa}|${c.banco}|${c.conta}`))
-    })
-  }
 
   function startCreate() {
     setEditando(null)
@@ -2242,14 +2095,6 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setNome('')
     setSinal('saida')
     setOrdem((categorias.length + 1) * 10)
-    setDescSel([])
-    setBusca('')
-    setApenasNaoClassificadas(false)
-    setFiltroSentido('todos')
-    setContaSel([])
-    setBuscaConta('')
-    setApenasNaoClassificadasConta(false)
-    setFiltroSentidoConta('todos')
   }
 
   function startEdit(c: CustoFinanceiroCategoria) {
@@ -2258,14 +2103,6 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     setNome(c.nome)
     setSinal(c.sinal)
     setOrdem(c.ordem)
-    setDescSel(c.descricoes)
-    setBusca('')
-    setApenasNaoClassificadas(false)
-    setFiltroSentido('todos')
-    setContaSel(c.contas)
-    setBuscaConta('')
-    setApenasNaoClassificadasConta(false)
-    setFiltroSentidoConta('todos')
   }
 
   function cancelForm() {
@@ -2275,7 +2112,7 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
 
   function save() {
     if (!nome.trim()) return
-    const payload = { nome: nome.trim(), sinal, ordem, descricoes: descSel, contas: contaSel }
+    const payload = { nome: nome.trim(), sinal, ordem, descricoes: [], contas: [] }
     if (editando) {
       updateCategoria.mutate({ id: editando.id, ...payload }, { onSuccess: cancelForm })
     } else {
@@ -2288,26 +2125,9 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
     deleteCategoria.mutate(c.id)
   }
 
-  function toggleDesc(item: DescricaoDisponivel) {
-    setDescSel((prev) => {
-      const exists = prev.some((d) => d.tipo === item.tipo && d.descricao === item.descricao)
-      if (exists) return prev.filter((d) => !(d.tipo === item.tipo && d.descricao === item.descricao))
-      return [...prev, { tipo: item.tipo, descricao: item.descricao }]
-    })
-  }
-
-  function toggleConta(item: ContaDisponivel) {
-    setContaSel((prev) => {
-      const exists = prev.some((c) => c.empresa === item.empresa && c.banco === item.banco && c.conta === item.conta)
-      if (exists) return prev.filter((c) => !(c.empresa === item.empresa && c.banco === item.banco && c.conta === item.conta))
-      return [...prev, { empresa: item.empresa, banco: item.banco, conta: item.conta }]
-    })
-  }
-
   const showForm = criando || !!editando
 
   return (
-    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white block-border max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
@@ -2332,9 +2152,6 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                         {c.sinal === 'entrada' ? '(+)' : '(-)'}
                       </span>
                       <span className="font-medium text-dark truncate">{c.nome}</span>
-                      <span className="text-muted-foreground flex-shrink-0">
-                        ({c.descricoes.length} descrições, {c.contas.length} contas)
-                      </span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button onClick={() => startEdit(c)}><Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-brand" /></button>
@@ -2383,228 +2200,10 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-dark">Descrições incluídas nesta categoria</label>
-                <p className="text-[10px] text-muted-foreground pb-1">
-                  Marcar uma descrição já usada em outra categoria a transfere para esta.
-                </p>
-
-                <div className="flex items-center gap-2 pb-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-                    <input
-                      className="w-full text-xs border-2 border-grid pl-6 pr-2 py-1.5 focus:outline-none focus:border-brand"
-                      placeholder="Buscar descrição..."
-                      value={busca}
-                      onChange={(e) => setBusca(e.target.value)}
-                    />
-                  </div>
-                  <select
-                    className="text-[10px] font-bold border-2 border-grid px-1.5 py-1.5 bg-white focus:outline-none focus:border-brand flex-shrink-0"
-                    value={filtroSentido}
-                    onChange={(e) => setFiltroSentido(e.target.value as typeof filtroSentido)}
-                  >
-                    <option value="todos">Todos os sinais</option>
-                    <option value="entrada">(+) Entrada</option>
-                    <option value="saida">(-) Saída</option>
-                    <option value="mista">± Mista</option>
-                  </select>
-                  <label className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground cursor-pointer select-none whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      className="accent-brand"
-                      checked={apenasNaoClassificadas}
-                      onChange={(e) => setApenasNaoClassificadas(e.target.checked)}
-                    />
-                    Só não classificadas
-                  </label>
-                </div>
-                <p className="text-[9px] text-muted-foreground pb-2">
-                  O sinal mostrado é o observado nos lançamentos: (+) só entrada, (-) só saída, ± quando a mesma descrição já apareceu nos dois sentidos.
-                </p>
-
-                <div className="flex items-center justify-between pb-1">
-                  <span className="text-[10px] text-muted-foreground">
-                    {descricoesFiltradas.length} descrição(ões) no filtro — {descSel.length} selecionada(s) no total
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="text-[10px] font-bold text-brand hover:underline disabled:opacity-40 disabled:no-underline"
-                      onClick={marcarTodosVisiveis}
-                      disabled={descricoesFiltradas.length === 0}
-                    >
-                      Marcar todos visíveis
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] font-bold text-muted-foreground hover:underline disabled:opacity-40 disabled:no-underline"
-                      onClick={desmarcarTodosVisiveis}
-                      disabled={descricoesFiltradas.length === 0}
-                    >
-                      Desmarcar todos visíveis
-                    </button>
-                  </div>
-                </div>
-
-                <div className="border-2 border-grid max-h-64 overflow-auto divide-y divide-grid/50">
-                  {descricoesFiltradas.map((d) => {
-                    const checked = descSel.some((s) => s.tipo === d.tipo && s.descricao === d.descricao)
-                    const outraCategoria = !checked && d.categoria_id != null
-                      ? categorias.find((c) => c.id === d.categoria_id)
-                      : null
-                    return (
-                      <label key={`${d.tipo}-${d.descricao}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
-                        <input type="checkbox" className="accent-brand flex-shrink-0" checked={checked} onChange={() => toggleDesc(d)} />
-                        <span
-                          className={cn(
-                            'text-[10px] font-black w-4 flex-shrink-0 text-center',
-                            d.sentido === 'entrada' ? 'text-green-700' : d.sentido === 'saida' ? 'text-red-700' : 'text-amber-600',
-                          )}
-                          title={d.sentido === 'entrada' ? 'Só entrada' : d.sentido === 'saida' ? 'Só saída' : 'Sinal misto'}
-                        >
-                          {d.sentido === 'entrada' ? '+' : d.sentido === 'saida' ? '-' : '±'}
-                        </span>
-                        <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0">
-                          {d.tipo === 'transferencia' ? 'Transferência' : 'Controle Fin.'}
-                        </span>
-                        <span className="truncate flex-1">{d.descricao}</span>
-                        {outraCategoria && (
-                          <span className="text-[9px] text-muted-foreground flex-shrink-0">em: {outraCategoria.nome}</span>
-                        )}
-                        <button
-                          type="button"
-                          className="flex-shrink-0 text-muted-foreground hover:text-brand"
-                          title="Ver lançamentos dessa descrição"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setPreview({ tipo: d.tipo, descricao: d.descricao })
-                          }}
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                      </label>
-                    )
-                  })}
-                  {descricoesFiltradas.length === 0 && (
-                    <p className="px-2 py-3 text-xs text-muted-foreground">
-                      {descricoes.length === 0 ? 'Nenhuma descrição disponível ainda.' : 'Nenhuma descrição encontrada para esse filtro.'}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-dark">Contas incluídas nesta categoria</label>
-                <p className="text-[10px] text-muted-foreground pb-1">
-                  Classifica automaticamente toda Transferência Bancária dessa conta, tenha ou não regra por
-                  descrição — marcar uma conta já usada em outra categoria a transfere para esta.
-                </p>
-
-                <div className="flex items-center gap-2 pb-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-                    <input
-                      className="w-full text-xs border-2 border-grid pl-6 pr-2 py-1.5 focus:outline-none focus:border-brand"
-                      placeholder="Buscar empresa/banco/conta..."
-                      value={buscaConta}
-                      onChange={(e) => setBuscaConta(e.target.value)}
-                    />
-                  </div>
-                  <select
-                    className="text-[10px] font-bold border-2 border-grid px-1.5 py-1.5 bg-white focus:outline-none focus:border-brand flex-shrink-0"
-                    value={filtroSentidoConta}
-                    onChange={(e) => setFiltroSentidoConta(e.target.value as typeof filtroSentidoConta)}
-                  >
-                    <option value="todos">Todos os sinais</option>
-                    <option value="entrada">(+) Entrada</option>
-                    <option value="saida">(-) Saída</option>
-                    <option value="mista">± Mista</option>
-                  </select>
-                  <label className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground cursor-pointer select-none whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      className="accent-brand"
-                      checked={apenasNaoClassificadasConta}
-                      onChange={(e) => setApenasNaoClassificadasConta(e.target.checked)}
-                    />
-                    Só não classificadas
-                  </label>
-                </div>
-                <p className="text-[9px] text-muted-foreground pb-2">
-                  O sinal mostrado é o observado nos lançamentos: (+) só entrada, (-) só saída, ± quando a mesma conta já apareceu nos dois sentidos.
-                </p>
-
-                <div className="flex items-center justify-between pb-1">
-                  <span className="text-[10px] text-muted-foreground">
-                    {contasFiltradas.length} conta(s) no filtro — {contaSel.length} selecionada(s) no total
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="text-[10px] font-bold text-brand hover:underline disabled:opacity-40 disabled:no-underline"
-                      onClick={marcarTodasVisiveisContas}
-                      disabled={contasFiltradas.length === 0}
-                    >
-                      Marcar todos visíveis
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[10px] font-bold text-muted-foreground hover:underline disabled:opacity-40 disabled:no-underline"
-                      onClick={desmarcarTodasVisiveisContas}
-                      disabled={contasFiltradas.length === 0}
-                    >
-                      Desmarcar todos visíveis
-                    </button>
-                  </div>
-                </div>
-
-                <div className="border-2 border-grid max-h-64 overflow-auto divide-y divide-grid/50">
-                  {contasFiltradas.map((c) => {
-                    const checked = contaSel.some((s) => s.empresa === c.empresa && s.banco === c.banco && s.conta === c.conta)
-                    const outraCategoria = !checked && c.categoria_id != null
-                      ? categorias.find((cat) => cat.id === c.categoria_id)
-                      : null
-                    return (
-                      <label key={`${c.empresa}-${c.banco}-${c.conta}`} className="flex items-center gap-2 px-2 py-1 text-xs cursor-pointer hover:bg-brand/5">
-                        <input type="checkbox" className="accent-brand flex-shrink-0" checked={checked} onChange={() => toggleConta(c)} />
-                        <span
-                          className={cn(
-                            'text-[10px] font-black w-4 flex-shrink-0 text-center',
-                            c.sentido === 'entrada' ? 'text-green-700' : c.sentido === 'saida' ? 'text-red-700' : 'text-amber-600',
-                          )}
-                          title={c.sentido === 'entrada' ? 'Só entrada' : c.sentido === 'saida' ? 'Só saída' : 'Sinal misto'}
-                        >
-                          {c.sentido === 'entrada' ? '+' : c.sentido === 'saida' ? '-' : '±'}
-                        </span>
-                        <span className="text-[9px] uppercase font-bold text-muted-foreground w-24 flex-shrink-0 truncate">{c.empresa}</span>
-                        <span className="truncate flex-1">Banco {c.banco} / Conta {c.conta}</span>
-                        {outraCategoria && (
-                          <span className="text-[9px] text-muted-foreground flex-shrink-0">em: {outraCategoria.nome}</span>
-                        )}
-                        <button
-                          type="button"
-                          className="flex-shrink-0 text-muted-foreground hover:text-brand"
-                          title="Ver lançamentos dessa conta"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setPreviewConta({ empresa: c.empresa, banco: c.banco, conta: c.conta })
-                          }}
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                      </label>
-                    )
-                  })}
-                  {contasFiltradas.length === 0 && (
-                    <p className="px-2 py-3 text-xs text-muted-foreground">
-                      {contasDisponiveis.length === 0 ? 'Nenhuma conta disponível ainda.' : 'Nenhuma conta encontrada para esse filtro.'}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Esta categoria só passa a valer para uma transferência quando referenciada por uma
+                regra em "Contas Especiais" (Mútuo/CG/Aporte/Interno).
+              </p>
 
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -2623,20 +2222,6 @@ function CategoriasCustoFinanceiroModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
-    {preview && (
-      <DescricaoLancamentosModal
-        tipo={preview.tipo}
-        descricao={preview.descricao}
-        onClose={() => setPreview(null)}
-      />
-    )}
-    {previewConta && (
-      <ContaLancamentosModal
-        conta={previewConta}
-        onClose={() => setPreviewConta(null)}
-      />
-    )}
-    </>
   )
 }
 

@@ -4,8 +4,8 @@ import type {
   APRecord, ReceitaRecord, SaldoRecord, SyncResponse, StatusResponse, FilterTree, SaldoConfig,
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
-  UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, DescricaoDisponivel, LancamentoDetalhe,
-  LancamentoConta, ContaDisponivel, RegraParTransferencia,
+  UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoDetalhe,
+  LancamentoConta, RegraParTransferencia,
 } from '@/types'
 
 export function useAP() {
@@ -333,22 +333,6 @@ export function useDeleteCustoFinanceiroRegraPar() {
   })
 }
 
-export function useCustoFinanceiroDescricoes(enabled: boolean) {
-  return useQuery<DescricaoDisponivel[]>({
-    queryKey: ['custo-financeiro-descricoes'],
-    enabled,
-    queryFn: () => api.get('/fluxo-obras/custo-financeiro/descricoes'),
-  })
-}
-
-export function useCustoFinanceiroContasDisponiveis(enabled: boolean) {
-  return useQuery<ContaDisponivel[]>({
-    queryKey: ['custo-financeiro-contas-disponiveis'],
-    enabled,
-    queryFn: () => api.get('/fluxo-obras/custo-financeiro/contas-disponiveis'),
-  })
-}
-
 export function useCustoFinanceiroLancamentos(
   grupoId: number | null, categoriaId: number | null, periodo: Periodo, enabled: boolean,
 ) {
@@ -373,22 +357,6 @@ export function useSetLancamentoCategoria() {
       await api.post(`/fluxo-obras/custo-financeiro/lancamentos/${lancamentoId}/categoria`, { categoria_id: categoriaId })
     },
     onSuccess: () => invalidateCustoFinanceiro(queryClient),
-  })
-}
-
-export function useCustoFinanceiroDescricaoLancamentos(tipo: string | null, descricao: string | null, enabled: boolean) {
-  return useQuery<LancamentoDetalhe[]>({
-    queryKey: ['custo-financeiro-descricao-lancamentos', tipo, descricao],
-    enabled: enabled && !!tipo && !!descricao,
-    queryFn: () => api.get('/fluxo-obras/custo-financeiro/descricao-lancamentos', { tipo, descricao }),
-  })
-}
-
-export function useCustoFinanceiroContaLancamentos(conta: LancamentoConta | null, enabled: boolean) {
-  return useQuery<LancamentoDetalhe[]>({
-    queryKey: ['custo-financeiro-conta-lancamentos', conta?.empresa, conta?.banco, conta?.conta],
-    enabled: enabled && !!conta,
-    queryFn: () => api.get('/fluxo-obras/custo-financeiro/conta-lancamentos', conta ? { ...conta } : {}),
   })
 }
 

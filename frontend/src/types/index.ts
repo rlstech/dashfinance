@@ -288,21 +288,6 @@ export interface LancamentoDetalhe {
   categoria_id: number | null
 }
 
-export interface DescricaoDisponivel {
-  tipo: 'transferencia' | 'controle'
-  descricao: string
-  categoria_id: number | null
-  sentido: 'entrada' | 'saida' | 'mista'
-}
-
-export interface ContaDisponivel {
-  empresa: string
-  banco: string
-  conta: string
-  categoria_id: number | null
-  sentido: 'entrada' | 'saida' | 'mista'
-}
-
 export interface RegraParTransferencia {
   id: number
   empresa_origem: string

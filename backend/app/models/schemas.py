@@ -226,21 +226,6 @@ class SetLancamentoCategoriaIn(BaseModel):
     categoria_id: int | None = None
 
 
-class DescricaoDisponivel(BaseModel):
-    tipo: str
-    descricao: str
-    categoria_id: int | None = None
-    sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa descrição
-
-
-class ContaDisponivel(BaseModel):
-    empresa: str
-    banco: str
-    conta: str
-    categoria_id: int | None = None
-    sentido: str  # 'entrada' | 'saida' | 'mista' — sinal(is) observado(s) nos lançamentos dessa conta
-
-
 class RegraParTransferenciaIn(BaseModel):
     empresa_origem: str
     empresa_destino: str
