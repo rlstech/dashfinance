@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from 'react'
 import { ArrowLeft, ChevronDown, ChevronRight, EyeOff, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
@@ -30,7 +30,7 @@ import {
   useUsers,
 } from '@/hooks/useFinanceiro'
 import { useAuthStore } from '@/hooks/useAuth'
-import { formatCurrency, formatDateTime } from '@/lib/formatters'
+import { formatCurrency, formatDateTime, formatBRLThousands, parseBRLInput } from '@/lib/formatters'
 import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -61,6 +61,53 @@ function periodoSlots(p: Periodo): Array<{ ano: number; mes: number }> {
   return slots
 }
 
+// ── Input de valor monetário com separador de milhar em tempo real ──────────
+
+function MoneyInput({
+  raw, onRawChange, onCommit, onCancel, className, inputRef,
+}: {
+  raw: string
+  onRawChange: (raw: string) => void
+  onCommit: () => void
+  onCancel: () => void
+  className?: string
+  inputRef: RefObject<HTMLInputElement | null>
+}) {
+  function handleChange(e: ChangeEvent<HTMLInputElement>) {
+    const el = e.target
+    const caret = el.selectionStart ?? el.value.length
+    const digitsBeforeCaret = el.value.slice(0, caret).replace(/[^\d,]/g, '').length
+    const formatted = formatBRLThousands(el.value)
+    onRawChange(formatted)
+    requestAnimationFrame(() => {
+      if (!inputRef.current) return
+      let count = 0
+      let pos = 0
+      for (; pos < formatted.length; pos++) {
+        if (/[\d,]/.test(formatted[pos])) count++
+        if (count >= digitsBeforeCaret) { pos++; break }
+      }
+      inputRef.current.setSelectionRange(pos, pos)
+    })
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="decimal"
+      value={raw}
+      onChange={handleChange}
+      onBlur={onCommit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onCommit()
+        if (e.key === 'Escape') onCancel()
+      }}
+      className={className}
+    />
+  )
+}
+
 // ── Célula editável inline ────────────────────────────────────────────────────
 
 interface EditableCellProps {
@@ -68,9 +115,11 @@ interface EditableCellProps {
   onSave: (v: number) => void
   disabled?: boolean
   colorCls?: string
+  locked?: boolean
+  lockedMessage?: string
 }
 
-function EditableCell({ value, onSave, disabled, colorCls }: EditableCellProps) {
+function EditableCell({ value, onSave, disabled, colorCls, locked, lockedMessage }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [raw, setRaw] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -81,28 +130,28 @@ function EditableCell({ value, onSave, disabled, colorCls }: EditableCellProps) 
 
   function startEdit() {
     if (disabled) return
+    if (locked) {
+      window.alert(lockedMessage ?? 'Informe primeiro o valor global.')
+      return
+    }
     setRaw(value === 0 ? '' : String(value))
     setEditing(true)
   }
 
   function commit() {
-    const parsed = parseFloat(raw.replace(',', '.'))
-    onSave(isNaN(parsed) ? 0 : parsed)
+    onSave(parseBRLInput(raw))
     setEditing(false)
   }
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
+      <MoneyInput
+        raw={raw}
+        onRawChange={setRaw}
+        onCommit={commit}
+        onCancel={() => setEditing(false)}
+        inputRef={inputRef}
         className="w-full text-right tabular-nums text-xs bg-white border-2 border-brand px-1 py-0.5 outline-none min-w-[80px]"
-        value={raw}
-        onChange={(e) => setRaw(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') setEditing(false)
-        }}
       />
     )
   }
@@ -115,7 +164,7 @@ function EditableCell({ value, onSave, disabled, colorCls }: EditableCellProps) 
         value === 0 ? 'text-muted-foreground/30' : (colorCls ?? 'text-dark'),
       )}
       onClick={startEdit}
-      title={disabled ? undefined : 'Clique para editar'}
+      title={disabled ? undefined : (locked ? lockedMessage : 'Clique para editar')}
     >
       {value === 0 ? '—' : formatCurrency(value)}
     </span>
@@ -857,8 +906,7 @@ function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, rea
   }
 
   function commit() {
-    const p = parseFloat(raw.replace(',', '.'))
-    onChange(isNaN(p) ? 0 : p)
+    onChange(parseBRLInput(raw))
     setEditing(false)
   }
 
@@ -871,17 +919,12 @@ function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, rea
       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
         {editing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="decimal"
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit()
-              if (e.key === 'Escape') setEditing(false)
-            }}
+          <MoneyInput
+            raw={raw}
+            onRawChange={setRaw}
+            onCommit={commit}
+            onCancel={() => setEditing(false)}
+            inputRef={inputRef}
             className="w-36 text-right tabular-nums text-sm font-bold border-2 border-brand px-2 py-1 outline-none bg-white"
           />
         ) : (
@@ -1017,18 +1060,22 @@ function ObraHistoricoModal({
 
 // ── Célula de previsto editável com histórico no hover ───────────────────────
 function PrevistoCell({
-  value, onChange, disabled, history, colorCls,
+  value, onChange, disabled, history, colorCls, locked, lockedMessage,
 }: {
   value: number
   onChange: (v: number) => void
   disabled?: boolean
   history?: PlanejamentoLogEntry[]
   colorCls?: string
+  locked?: boolean
+  lockedMessage?: string
 }) {
-  const hasHist = !!history && history.length > 0
+  // Só mostra a bolinha a partir da 2ª alteração dessa célula — a 1ª (preenchimento
+  // inicial de um valor antes vazio/zero) já gera um log, mas não deve ser sinalizada.
+  const hasHist = !!history && history.length > 1
   return (
     <div className="relative group">
-      <EditableCell value={value} onSave={onChange} disabled={disabled} colorCls={colorCls} />
+      <EditableCell value={value} onSave={onChange} disabled={disabled} colorCls={colorCls} locked={locked} lockedMessage={lockedMessage} />
       {hasHist && (
         <>
           <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-amber-500 pointer-events-none" />
@@ -1115,6 +1162,10 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
   const custoOk = Math.abs(r2(somaCusto - custoGlobal)) <= 0.01
   const receitaOk = especial ? true : Math.abs(r2(somaReceita - receitaGlobal)) <= 0.01
   const balanced = custoOk && receitaOk
+
+  // Bloqueia o lançamento mensal enquanto o valor global correspondente não for informado.
+  const custoGlobalUnset = custoGlobal === 0
+  const receitaGlobalUnset = !especial && receitaGlobal === 0
 
   const dirty = useMemo(() => {
     if (r2(custoGlobal) !== r2(data.custo_global)) return true
@@ -1377,6 +1428,12 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
                               disabled={!canEdit || save.isPending}
                               colorCls={row.colorCls}
                               history={histMap[`${meses[mesIdx].ano}-${meses[mesIdx].mes}-${campo}`]}
+                              locked={row.kind === 'custo' ? custoGlobalUnset : receitaGlobalUnset}
+                              lockedMessage={
+                                row.kind === 'custo'
+                                  ? 'Informe primeiro o Custo Previsto (Global) desta obra antes de lançar os valores mensais.'
+                                  : 'Informe primeiro a Receita Prevista (Global) desta obra antes de lançar os valores mensais.'
+                              }
                               onChange={(v) => {
                                 if (row.kind === 'custo') {
                                   setCustoPrev((prev) => prev.map((x, i) => (i === mesIdx ? v : x)))

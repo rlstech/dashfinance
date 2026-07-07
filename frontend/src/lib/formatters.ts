@@ -46,6 +46,23 @@ export function compareDates(a: string, b: string): number {
   return ya * 10000 + ma * 100 + da - (yb * 10000 + mb * 100 + db)
 }
 
+export function formatBRLThousands(raw: string): string {
+  let value = raw.replace(/[^\d,]/g, '')
+  const firstComma = value.indexOf(',')
+  if (firstComma !== -1) {
+    value = value.slice(0, firstComma + 1) + value.slice(firstComma + 1).replace(/,/g, '')
+  }
+  const [intPart, decPart] = value.split(',')
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return decPart !== undefined ? `${grouped},${decPart.slice(0, 2)}` : grouped
+}
+
+export function parseBRLInput(raw: string): number {
+  const cleaned = raw.replace(/\./g, '').replace(',', '.')
+  const n = parseFloat(cleaned)
+  return isNaN(n) ? 0 : n
+}
+
 export function exportCSV(filename: string, headers: string[], rows: string[][]) {
   const csv = [headers, ...rows]
     .map((r) => r.map((v) => `"${v}"`).join(';'))

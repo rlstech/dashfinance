@@ -4,14 +4,8 @@ import { Switch } from '@/components/ui/switch'
 import { useStatus, useFilterTree, useSaldoConfig, useSaveSaldos } from '@/hooks/useFinanceiro'
 import { useAuthStore } from '@/hooks/useAuth'
 import { EMPRESA_COLORS } from '@/types'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, parseBRLInput } from '@/lib/formatters'
 import type { SaldoConfig } from '@/types'
-
-function parseBRLInput(raw: string): number {
-  const cleaned = raw.replace(/\./g, '').replace(',', '.')
-  const n = parseFloat(cleaned)
-  return isNaN(n) ? 0 : n
-}
 
 function buildKey(banco: string, conta: string) {
   return `${banco}|${conta}`
