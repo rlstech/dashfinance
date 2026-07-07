@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, EyeOff, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
@@ -8,6 +8,7 @@ import {
   useCustoFinanceiro,
   useCustoFinanceiroCategorias,
   useCustoFinanceiroLancamentos,
+  useCustoFinanceiroLancamentosSuprimidos,
   useCustoFinanceiroRegrasPar,
   useCustoFinanceiroTransferenciasContas,
   useDeleteCustoFinanceiroCategoria,
@@ -34,7 +35,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoConta, LancamentoDetalhe, RegraParTransferencia } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoConta, LancamentoDetalhe, LancamentoSuprimido, RegraParTransferencia } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const CATEGORIA_NAO_CLASSIFICADA = 0
@@ -1765,6 +1766,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
   const [detalhe, setDetalhe] = useState<{ id: number; nome: string; ano?: number; mes?: number } | null>(null)
   const [gerenciarAberto, setGerenciarAberto] = useState(false)
   const [regrasParAberto, setRegrasParAberto] = useState(false)
+  const [suprimidosAberto, setSuprimidosAberto] = useState(false)
   const currentUser = useAuthStore((s) => s.user)
   const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
   const n = meses.length
@@ -1800,6 +1802,15 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
               onClick={(e) => { e.stopPropagation(); setRegrasParAberto(true) }}
             >
               <Share2 className="h-3.5 w-3.5" /> Contas Especiais
+            </span>
+          )}
+          {currentUser?.is_admin && (
+            <span
+              role="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-brand"
+              onClick={(e) => { e.stopPropagation(); setSuprimidosAberto(true) }}
+            >
+              <EyeOff className="h-3.5 w-3.5" /> Transferências Suprimidas
             </span>
           )}
           <span className="text-green-700 font-bold">Ent: {formatCurrency(total_entradas)}</span>
@@ -1966,6 +1977,9 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
       {regrasParAberto && (
         <RegrasParTransferenciaModal onClose={() => setRegrasParAberto(false)} />
       )}
+      {suprimidosAberto && (
+        <LancamentosSuprimidosModal grupoId={grupoId} periodo={periodo} onClose={() => setSuprimidosAberto(false)} />
+      )}
     </div>
   )
 }
@@ -1978,7 +1992,7 @@ function fmtContaLabel(c: LancamentoConta | null): string {
 }
 
 function LancamentosTable({
-  lancamentos, isLoading, emptyMessage, categorias, isAdmin, onReclassify,
+  lancamentos, isLoading, emptyMessage, categorias, isAdmin, onReclassify, showMotivo,
 }: {
   lancamentos: LancamentoDetalhe[]
   isLoading: boolean
@@ -1986,6 +2000,7 @@ function LancamentosTable({
   categorias: CustoFinanceiroCategoria[]
   isAdmin: boolean
   onReclassify: (lancamentoId: string, categoriaId: number | null) => void
+  showMotivo?: boolean
 }) {
   if (isLoading) {
     return (
@@ -2010,6 +2025,7 @@ function LancamentosTable({
           <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Destino</th>
           <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Banco</th>
           <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Conta</th>
+          {showMotivo && <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Motivo</th>}
           {isAdmin && <th className="text-left px-3 py-1.5 font-black uppercase tracking-widest text-[10px]">Categoria</th>}
         </tr>
       </thead>
@@ -2025,6 +2041,11 @@ function LancamentosTable({
             <td className="px-3 py-1 whitespace-nowrap">{fmtContaLabel(lc.destino)}</td>
             <td className="px-3 py-1 whitespace-nowrap">{lc.banco || '—'}</td>
             <td className="px-3 py-1 whitespace-nowrap">{lc.conta || '—'}</td>
+            {showMotivo && (
+              <td className="px-3 py-1 whitespace-nowrap text-muted-foreground">
+                {(lc as LancamentoSuprimido).rotulo ?? '—'}
+              </td>
+            )}
             {isAdmin && (
               <td className="px-3 py-1">
                 {lc.tipo === 'controle' ? (
@@ -2092,6 +2113,47 @@ function LancamentosModal({
             emptyMessage={mesLabel ? `Nenhum lançamento nesta categoria em ${mesLabel}.` : 'Nenhum lançamento nesta categoria no período selecionado.'}
             categorias={categorias}
             isAdmin={isAdmin}
+            onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal: transferências suprimidas por Conta Especial (admin) ─────────────
+
+function LancamentosSuprimidosModal({
+  grupoId, periodo, onClose,
+}: {
+  grupoId: number
+  periodo: Periodo
+  onClose: () => void
+}) {
+  const { data: lancamentos = [], isLoading } = useCustoFinanceiroLancamentosSuprimidos(grupoId, periodo, true)
+  const { data: categorias = [] } = useCustoFinanceiroCategorias()
+  const setCategoria = useSetLancamentoCategoria()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white block-border max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 border-grid flex-shrink-0">
+          <span className="text-xs font-black uppercase tracking-widest text-dark">
+            Transferências Suprimidas por Conta Especial — {MESES[periodo.mesInicio - 1]}/{periodo.anoInicio} a {MESES[periodo.mesFim - 1]}/{periodo.anoFim}
+          </span>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-dark" /></button>
+        </div>
+        <p className="px-4 pt-3 text-[11px] text-muted-foreground">
+          Escolha uma categoria para incluir uma transferência no card. Isso cria uma reclassificação manual (override) que passa a valer para esse lançamento específico.
+        </p>
+        <div className="overflow-auto flex-1">
+          <LancamentosTable
+            lancamentos={lancamentos}
+            isLoading={isLoading}
+            emptyMessage="Nenhuma transferência suprimida por Conta Especial neste período."
+            categorias={categorias}
+            isAdmin
+            showMotivo
             onReclassify={(lancamentoId, categoriaId) => setCategoria.mutate({ lancamentoId, categoriaId })}
           />
         </div>

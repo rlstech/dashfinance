@@ -25,6 +25,7 @@ from app.models.schemas import (
     GrupoTotaisReais,
     LancamentoConta,
     LancamentoDetalhe,
+    LancamentoSuprimido,
     PlanejamentoLogEntry,
     RegraParTransferencia,
     RegraParTransferenciaIn,
@@ -555,11 +556,12 @@ async def _lancamentos_classificados(
     empresas_visiveis: set[str],
     contas_transferencias: set[tuple[str, str, str]] | None = None,
     slots_set: set[tuple[int, int]] | None = None,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento.
     Transferências: override manual > regra por par de conta (Mútuo/CG/Aporte/Interno) > não
     classificado. "Interno" (anular) suprime o lançamento por completo, a menos que já exista um
-    override manual explícito para ele.
+    override manual explícito para ele — nesse caso ele é acumulado em `suprimidos` (junto com o
+    rótulo da regra que o suprimiu) em vez de descartado, para permitir reincluí-lo manualmente.
     Controle financeiro: sempre forçado pelo sentido (entrada > Receitas financeiras, saída > Despesas
     financeiras), ignorando override manual."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
@@ -580,6 +582,7 @@ async def _lancamentos_classificados(
         par_map[(r["empresa_destino"], r["empresa_origem"], r["banco"], r["conta"])] = r
 
     out: list[dict] = []
+    suprimidos: list[dict] = []
     for item in transf_raw + controle_raw:
         if item.get("empresa") not in empresas_visiveis:
             continue
@@ -615,6 +618,7 @@ async def _lancamentos_classificados(
 
         override_id = overrides.get(item["id"])
         if par and par["anular"] and override_id is None:
+            suprimidos.append({**item, "categoria_id": None, "_dt": dt, "rotulo": par.get("rotulo")})
             continue
 
         if item["tipo"] == "controle":
@@ -625,7 +629,7 @@ async def _lancamentos_classificados(
                 par_categoria_id = par["categoria_positiva_id"] if item["sentido"] == "entrada" else par["categoria_negativa_id"]
             categoria_id = override_id or par_categoria_id
         out.append({**item, "categoria_id": categoria_id, "_dt": dt})
-    return out, categorias
+    return out, suprimidos, categorias
 
 
 @router.get("/custo-financeiro", response_model=CustoFinanceiroResponse)
@@ -651,7 +655,7 @@ async def get_custo_financeiro(
 
     empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
     contas_transferencias = await _contas_transferencias_visiveis(grupo_id)
-    lancamentos, categorias = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
+    lancamentos, _suprimidos, categorias = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
 
     valores_por_categoria: dict[int | None, list[float]] = {}
     total_entradas = 0.0
@@ -715,7 +719,7 @@ async def get_custo_financeiro_lancamentos(
 
     empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
     contas_transferencias = await _contas_transferencias_visiveis(grupo_id)
-    lancamentos, _ = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
+    lancamentos, _suprimidos, _categorias = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
 
     alvo = categoria_id or None
     filtrados = sorted(
@@ -738,6 +742,48 @@ async def get_custo_financeiro_lancamentos(
             categoria_id=lc["categoria_id"],
         )
         for lc in filtrados
+    ]
+
+
+@router.get("/custo-financeiro/lancamentos-suprimidos", response_model=list[LancamentoSuprimido])
+async def get_custo_financeiro_lancamentos_suprimidos(
+    grupo_id: int,
+    ano: int | None = None,
+    ano_inicio: int | None = None,
+    mes_inicio: int = 1,
+    ano_fim: int | None = None,
+    mes_fim: int = 12,
+    user: UserOut = Depends(get_current_user),
+):
+    """Lista transferências suprimidas por regras de Conta Especial (anular=True) no período, para
+    permitir reincluí-las manualmente atribuindo uma categoria (via
+    POST /custo-financeiro/lancamentos/{id}/categoria)."""
+    if not await pg.is_grupo_visible_to_user(grupo_id, user.id, user.is_admin):
+        raise HTTPException(status_code=403, detail="Sem acesso a este grupo")
+
+    yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
+    slots_set = set(_periodo_slots(yi, mi, yf, mf))
+
+    empresas_visiveis = await _empresas_visiveis_custo_financeiro(grupo_id, user)
+    contas_transferencias = await _contas_transferencias_visiveis(grupo_id)
+    _lancamentos, suprimidos, _categorias = await _lancamentos_classificados(empresas_visiveis, contas_transferencias, slots_set)
+
+    return [
+        LancamentoSuprimido(
+            id=lc["id"],
+            tipo=lc["tipo"],
+            data=lc["data"],
+            descricao=lc["descricao"],
+            valor=lc["valor"],
+            sentido=lc["sentido"],
+            origem=lc.get("origem"),
+            destino=lc.get("destino"),
+            banco=lc["banco"],
+            conta=lc["conta"],
+            categoria_id=lc["categoria_id"],
+            rotulo=lc.get("rotulo"),
+        )
+        for lc in sorted(suprimidos, key=lambda lc: lc["_dt"])
     ]
 
 

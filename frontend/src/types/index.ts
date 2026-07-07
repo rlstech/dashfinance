@@ -288,6 +288,10 @@ export interface LancamentoDetalhe {
   categoria_id: number | null
 }
 
+export interface LancamentoSuprimido extends LancamentoDetalhe {
+  rotulo: string | null
+}
+
 export interface RegraParTransferencia {
   id: number
   empresa_origem: string

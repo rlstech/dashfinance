@@ -222,6 +222,10 @@ class LancamentoDetalhe(BaseModel):
     categoria_id: int | None = None
 
 
+class LancamentoSuprimido(LancamentoDetalhe):
+    rotulo: str | None = None  # rótulo da regra de Conta Especial que suprimiu o lançamento
+
+
 class SetLancamentoCategoriaIn(BaseModel):
     categoria_id: int | None = None
 

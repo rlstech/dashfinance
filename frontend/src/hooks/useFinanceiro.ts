@@ -5,7 +5,7 @@ import type {
   FluxoPlanejamentoResponse, SaveObraPlanejamentoIn, PlanejamentoLogEntry, BulkImportResult, GrupoObras,
   FluxoRealCachedResponse, GrupoTotaisReais, GrupoTotaisPrevistos, Periodo,
   UserBasic, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoDetalhe,
-  LancamentoConta, RegraParTransferencia,
+  LancamentoConta, RegraParTransferencia, LancamentoSuprimido,
 } from '@/types'
 
 export function useAP() {
@@ -272,6 +272,7 @@ function invalidateCustoFinanceiro(queryClient: ReturnType<typeof useQueryClient
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricoes'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-contas-disponiveis'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos'], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: ['custo-financeiro-lancamentos-suprimidos'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-descricao-lancamentos'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-conta-lancamentos'], refetchType: 'all' })
   queryClient.invalidateQueries({ queryKey: ['custo-financeiro-regras-par'], refetchType: 'all' })
@@ -342,6 +343,22 @@ export function useCustoFinanceiroLancamentos(
     queryFn: () => api.get('/fluxo-obras/custo-financeiro/lancamentos', {
       grupo_id: grupoId,
       categoria_id: categoriaId,
+      ano_inicio: periodo.anoInicio,
+      mes_inicio: periodo.mesInicio,
+      ano_fim: periodo.anoFim,
+      mes_fim: periodo.mesFim,
+    }),
+  })
+}
+
+export function useCustoFinanceiroLancamentosSuprimidos(
+  grupoId: number | null, periodo: Periodo, enabled: boolean,
+) {
+  return useQuery<LancamentoSuprimido[]>({
+    queryKey: ['custo-financeiro-lancamentos-suprimidos', grupoId, periodo],
+    enabled: enabled && grupoId !== null,
+    queryFn: () => api.get('/fluxo-obras/custo-financeiro/lancamentos-suprimidos', {
+      grupo_id: grupoId,
       ano_inicio: periodo.anoInicio,
       mes_inicio: periodo.mesInicio,
       ano_fim: periodo.anoFim,
