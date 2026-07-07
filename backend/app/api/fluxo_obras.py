@@ -600,10 +600,18 @@ async def _lancamentos_classificados(
         if item["tipo"] == "transferencia":
             o, d = item.get("origem"), item.get("destino")
             if o and d:
-                par = (
-                    par_map.get((o["empresa"], d["empresa"], o["banco"], o["conta"]))
-                    or par_map.get((o["empresa"], d["empresa"], d["banco"], d["conta"]))
-                )
+                par_o = par_map.get((o["empresa"], d["empresa"], o["banco"], o["conta"]))
+                par_d = par_map.get((o["empresa"], d["empresa"], d["banco"], d["conta"]))
+                # Uma regra "real" (não anuladora) numa ponta tem prioridade sobre uma
+                # regra "Interno" (anular) na outra ponta: o movimento representa um
+                # evento real (ex. tomada/pagamento de CG ou Mútuo), não uma transferência
+                # puramente interna, mesmo que a ponta de origem seja uma conta "Interno".
+                if par_o and not par_o["anular"]:
+                    par = par_o
+                elif par_d and not par_d["anular"]:
+                    par = par_d
+                else:
+                    par = par_o or par_d
 
         override_id = overrides.get(item["id"])
         if par and par["anular"] and override_id is None:
