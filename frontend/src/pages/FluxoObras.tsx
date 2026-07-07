@@ -1760,7 +1760,7 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
 
 // ── Card Custo Financeiro (Tesouraria) ───────────────────────────────────────
 
-function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceiroResponse; grupoId: number; periodo: Periodo }) {
+function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }: { data: CustoFinanceiroResponse; grupoId: number; periodo: Periodo; saldoOperacionalPorMes: Map<string, number> }) {
   const [collapsed, setCollapsed] = useState(false)
   const [detalhe, setDetalhe] = useState<{ id: number; nome: string; ano?: number; mes?: number } | null>(null)
   const [gerenciarAberto, setGerenciarAberto] = useState(false)
@@ -1768,6 +1768,9 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
   const currentUser = useAuthStore((s) => s.user)
   const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
   const n = meses.length
+  const saldoOperacional = meses.map((s) => saldoOperacionalPorMes.get(`${s.ano}-${s.mes}`) ?? 0)
+  const totalSaldoOperacional = saldoOperacional.reduce((s, v) => s + v, 0)
+  const fluxoComOperacional = fluxo_liquido + totalSaldoOperacional
 
   return (
     <div className="bg-white block-border overflow-hidden">
@@ -1801,8 +1804,11 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
           )}
           <span className="text-green-700 font-bold">Ent: {formatCurrency(total_entradas)}</span>
           <span className="text-red-700 font-bold">Saí: {formatCurrency(total_saidas)}</span>
-          <span className={cn('font-black', fluxo_liquido >= 0 ? 'text-green-700' : 'text-red-700')}>
-            Fluxo: {formatCurrency(fluxo_liquido)}
+          <span
+            className={cn('font-black', fluxoComOperacional >= 0 ? 'text-green-700' : 'text-red-700')}
+            title="Inclui o Saldo do Mês (Receita Realizada − Custo Real) do Consolidado Operacional do Grupo"
+          >
+            Fluxo: {formatCurrency(fluxoComOperacional)}
           </span>
         </div>
       </button>
@@ -1898,18 +1904,39 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo }: { data: CustoFinanceir
                 })}
                 <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30 text-red-300">{formatCurrency(-total_saidas)}</td>
               </tr>
+              <tr className="bg-dark/60 text-white font-bold">
+                <td
+                  className="px-3 py-1.5 sticky left-0 bg-dark/60 text-[10px] uppercase tracking-widest"
+                  title="Receita Realizada − Custo Real do Consolidado Operacional do Grupo"
+                >
+                  Saldo Operacional (Consolidado)
+                </td>
+                {saldoOperacional.map((v, i) => (
+                  <td key={i} className="px-1 py-1.5 text-right tabular-nums">
+                    {v === 0 ? '—' : formatCurrency(v)}
+                  </td>
+                ))}
+                <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30">
+                  {formatCurrency(totalSaldoOperacional)}
+                </td>
+              </tr>
               <tr className="bg-brand text-white font-black text-sm">
-                <td className="px-3 py-2 sticky left-0 bg-brand text-[10px] uppercase tracking-widest">Fluxo do Período</td>
+                <td
+                  className="px-3 py-2 sticky left-0 bg-brand text-[10px] uppercase tracking-widest"
+                  title="Fluxo financeiro do período + Saldo do Mês do Consolidado Operacional do Grupo"
+                >
+                  Fluxo do Período
+                </td>
                 {Array.from({ length: n }).map((_, i) => {
-                  const v = categorias.reduce((s, c) => s + c.valores[i], 0)
+                  const v = categorias.reduce((s, c) => s + c.valores[i], 0) + saldoOperacional[i]
                   return (
                     <td key={i} className={cn('px-1 py-2 text-right tabular-nums font-black', v < 0 ? 'text-red-200' : '')}>
                       {v === 0 ? '—' : formatCurrency(v)}
                     </td>
                   )
                 })}
-                <td className={cn('px-1 py-2 text-right tabular-nums border-l-2 border-white/30 font-black', fluxo_liquido < 0 ? 'text-red-200' : '')}>
-                  {formatCurrency(fluxo_liquido)}
+                <td className={cn('px-1 py-2 text-right tabular-nums border-l-2 border-white/30 font-black', fluxoComOperacional < 0 ? 'text-red-200' : '')}>
+                  {formatCurrency(fluxoComOperacional)}
                 </td>
               </tr>
             </tbody>
@@ -2648,6 +2675,25 @@ export default function FluxoObras() {
     }
   }, [grupoAtivo, tree, todasObras, dadosReais, periodo])
 
+  // Saldo do Mês do Consolidado Operacional (Receita Realizada − Custo Real), por ano/mês —
+  // usado pelo Custo Financeiro para refletir o fluxo de caixa total do grupo, não só o financeiro.
+  const saldoOperacionalPorMes = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const obra of obrasParaRender) {
+      for (const m of obra.meses) {
+        const key = `${m.ano}-${m.mes}`
+        map.set(key, (map.get(key) ?? 0) + (m.receita_realizada - m.custo_real))
+      }
+    }
+    if (obrasGreedy) {
+      for (const m of obrasGreedy.sintetica.meses) {
+        const key = `${m.ano}-${m.mes}`
+        map.set(key, (map.get(key) ?? 0) + (m.receita_realizada - m.custo_real))
+      }
+    }
+    return map
+  }, [obrasParaRender, obrasGreedy])
+
   function handleAbrirGrupo(g: GrupoObras) {
     setGrupoAtivoId(g.id)
     setView('obras')
@@ -2980,7 +3026,12 @@ export default function FluxoObras() {
             )}
 
             {custoFinanceiro && (
-              <CustoFinanceiroGrupo data={custoFinanceiro} grupoId={grupoAtivoId ?? 0} periodo={periodo} />
+              <CustoFinanceiroGrupo
+                data={custoFinanceiro}
+                grupoId={grupoAtivoId ?? 0}
+                periodo={periodo}
+                saldoOperacionalPorMes={saldoOperacionalPorMes}
+              />
             )}
           </div>
         )}
