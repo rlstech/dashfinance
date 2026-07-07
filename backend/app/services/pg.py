@@ -246,6 +246,7 @@ async def init_tables():
         await _migrate_grupos_custo_financeiro(conn)
         await _seed_custo_financeiro_categorias(conn)
         await _seed_regras_par_transferencia(conn)
+        await _fix_regra_par_gama01_aporte(conn)
     log.info("Tabelas PostgreSQL verificadas/criadas")
 
 
@@ -385,13 +386,27 @@ _REGRAS_PAR_TRANSFERENCIA = [
     ("COMBRASEN", "TRUST", "756", "9192-8", "Interno", True, None, None),
     ("COMBRASEN", "TRUST", "756", "15041-0", "Mutuo", False,
      "Empréstimos tomados - Mútuo", "Empréstimos pagos - Mútuo"),
-    ("COMBRASEN", "TRUST", "208", "913155-2", "Aporte", False,
+    ("COMBRASEN", "GAMA 01", "208", "913155-2", "Aporte", False,
      "Devolução de aportes da GAMA 01 SPE", "Aportes para GAMA 01 SPE"),
     ("COMBRASEN", "GAMA 01", "70", "9119-3", "Aporte", False,
      "Devolução de aportes da GAMA 01 SPE", "Aportes para GAMA 01 SPE"),
     ("COMBRASEN", "CONSÓRCIO HMSJ", "70", "9333-1", "Aporte", False,
      "Devolução de aportes CONSÓRCIO HMSJ", "Aportes para CONSÓRCIO HMSJ"),
 ]
+
+
+async def _fix_regra_par_gama01_aporte(conn):
+    """One-time: corrige regra de aporte GAMA 01 (conta 208/913155-2) seedada com
+    empresa_destino errado ("TRUST" em vez de "GAMA 01", erro de copiar/colar).
+    No-op se a linha já foi corrigida ou não existe."""
+    result = await conn.execute(
+        """UPDATE custo_financeiro_regra_par_transferencia
+           SET empresa_destino = 'GAMA 01'
+           WHERE empresa_origem = 'COMBRASEN' AND empresa_destino = 'TRUST'
+             AND banco = '208' AND conta = '913155-2'"""
+    )
+    if result != "UPDATE 0":
+        log.info("Correção regra_par_transferencia: conta 208/913155-2 movida de TRUST para GAMA 01")
 
 
 async def _seed_regras_par_transferencia(conn):

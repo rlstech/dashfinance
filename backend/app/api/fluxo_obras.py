@@ -574,9 +574,10 @@ async def _lancamentos_classificados(
         (c["id"] for c in categorias if c["nome"].strip().lower() == "despesas financeiras"), None
     )
     regras_par = await pg.get_custo_financeiro_regras_par()
-    par_map: dict[tuple[str, str, str, str], dict] = {
-        (r["empresa_origem"], r["empresa_destino"], r["banco"], r["conta"]): r for r in regras_par
-    }
+    par_map: dict[tuple[str, str, str, str], dict] = {}
+    for r in regras_par:
+        par_map[(r["empresa_origem"], r["empresa_destino"], r["banco"], r["conta"])] = r
+        par_map[(r["empresa_destino"], r["empresa_origem"], r["banco"], r["conta"])] = r
 
     out: list[dict] = []
     for item in transf_raw + controle_raw:
