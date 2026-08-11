@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuthStore, loginRequest } from '@/hooks/useAuth'
 import { useFilterStore } from '@/hooks/useFilters'
 
@@ -13,6 +14,7 @@ export default function Login() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -71,14 +73,25 @@ export default function Login() {
             <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
               Senha
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full border-2 border-dark px-3 py-2 text-sm font-medium focus:outline-none focus:border-brand bg-white"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full border-2 border-dark px-3 py-2 pr-10 text-sm font-medium focus:outline-none focus:border-brand bg-white"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                tabIndex={-1}
+                aria-label={showPassword ? 'Ocultar senha' : 'Revelar senha'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-dark"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           {error && (
