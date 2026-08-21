@@ -74,3 +74,10 @@ export function exportCSV(filename: string, headers: string[], rows: string[][])
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+/** Intervalo ISO (YYYY-MM-DD) formatado como "DD/MM/YYYY – DD/MM/YYYY". */
+export function formatRangeLabel(start: string, end: string): string {
+  if (!start || !end) return 'Período completo'
+  const fmt = (value: string) => value.split('-').reverse().join('/')
+  return `${fmt(start)} – ${fmt(end)}`
+}

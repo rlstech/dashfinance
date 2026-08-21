@@ -2,7 +2,7 @@ import { startTransition, useMemo, useEffect, useState } from 'react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { FileText, Sheet } from 'lucide-react'
 import { exportPivotPDF, exportPivotXLSX, exportExtratoPDF, exportExtratoXLSX, type ExtratoRowExport } from '@/lib/exportPivot'
-import { FilterSidebar } from '@/components/filters/FilterSidebar'
+import { FilteredPage } from '@/components/layout/FilteredPage'
 import { CashFlowChart } from '@/components/charts/CashFlowChart'
 import { DonutChart } from '@/components/charts/DonutChart'
 import { DataTable } from '@/components/tables/DataTable'
@@ -500,9 +500,8 @@ export default function FluxoCaixa() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-0">
-        <FilterSidebar showVis />
-        <div className="min-w-0 flex-1 space-y-6 overflow-auto p-5 md:p-7">
+      <FilteredPage showVis>
+        <div className="space-y-6">
           <div className="h-44 bg-white block-border animate-pulse" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 h-80 bg-white block-border animate-pulse" />
@@ -510,242 +509,238 @@ export default function FluxoCaixa() {
           </div>
           <div className="h-96 bg-white block-border animate-pulse" />
         </div>
-      </div>
+      </FilteredPage>
     )
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <FilterSidebar showVis />
+    <FilteredPage showVis>
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
 
-      <div className="min-w-0 flex-1 overflow-auto p-5 md:p-7">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-
-          {/* Hero KPI */}
-          <div className="data-panel lg:col-span-12 flex flex-col justify-between gap-7 p-6 md:p-7 xl:flex-row">
-            <div>
-              <p className="section-label text-brand">Fluxo de caixa</p>
-              <p className="mt-4 text-sm font-medium text-muted-foreground">
-                Saldo do período <span className={`ml-2 font-semibold ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>{kpis.diasPositivos} dias positivos</span>
+        {/* Hero KPI */}
+        <div className="data-panel lg:col-span-12 flex flex-col justify-between gap-7 p-6 md:p-7 xl:flex-row">
+          <div>
+            <p className="section-label text-brand">Fluxo de caixa</p>
+            <p className="mt-4 text-sm font-medium text-muted-foreground">
+              Saldo do período <span className={`ml-2 font-semibold ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>{kpis.diasPositivos} dias positivos</span>
+            </p>
+            <h2 className={`hero-metric mt-2 ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>
+              {formatCompact(kpis.saldo)}
+            </h2>
+          </div>
+          <div className="grid w-full grid-cols-1 divide-y divide-line border-t border-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:border-t-0 xl:max-w-xl">
+            <div className="metric-cell px-0 pt-4 sm:pt-3">
+              <p className="section-label text-positive">Total entradas</p>
+              <p className="mt-2 text-2xl font-semibold text-positive">{formatCompact(kpis.totalEntradas)}</p>
+            </div>
+            <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+              <p className="section-label text-negative">Total saídas</p>
+              <p className="mt-2 text-2xl font-semibold text-negative">{formatCompact(kpis.totalSaidas)}</p>
+            </div>
+            <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+              <p className="section-label text-brand">Dias positivos</p>
+              <p className="mt-2 text-2xl font-semibold text-brand">
+                {kpis.diasPositivos} <span className="text-sm font-medium text-muted-foreground">/ {kpis.totalDias}</span>
               </p>
-              <h2 className={`hero-metric mt-2 ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>
-                {formatCompact(kpis.saldo)}
-              </h2>
-            </div>
-            <div className="grid w-full grid-cols-1 divide-y divide-line border-t border-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:border-t-0 xl:max-w-xl">
-              <div className="metric-cell px-0 pt-4 sm:pt-3">
-                <p className="section-label text-positive">Total entradas</p>
-                <p className="mt-2 text-2xl font-semibold text-positive">{formatCompact(kpis.totalEntradas)}</p>
-              </div>
-              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
-                <p className="section-label text-negative">Total saídas</p>
-                <p className="mt-2 text-2xl font-semibold text-negative">{formatCompact(kpis.totalSaidas)}</p>
-              </div>
-              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
-                <p className="section-label text-brand">Dias positivos</p>
-                <p className="mt-2 text-2xl font-semibold text-brand">
-                  {kpis.diasPositivos} <span className="text-sm font-medium text-muted-foreground">/ {kpis.totalDias}</span>
-                </p>
-              </div>
             </div>
           </div>
+        </div>
 
-          {/* Chart: CashFlow */}
-          <div className="data-panel lg:col-span-8 flex flex-col p-6 md:p-7">
-            <div className="flex justify-between items-end mb-8">
-              <h3 className="text-lg font-black uppercase">
-                Fluxo de Caixa {chartMode === 'diario' ? 'Diário' : 'Mensal'}
-              </h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setChartMode('diario')}
-                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${chartMode === 'diario' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
-                >
-                  Diário
-                </button>
-                <button
-                  onClick={() => setChartMode('mensal')}
-                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${chartMode === 'mensal' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
-                >
-                  Mensal
-                </button>
-              </div>
-            </div>
-            <div className="flex-1">
-              <CashFlowChart data={chartMode === 'diario' ? chartData : chartDataMensal} height={350} />
+        {/* Chart: CashFlow */}
+        <div className="data-panel lg:col-span-8 flex flex-col p-6 md:p-7">
+          <div className="flex justify-between items-end mb-8">
+            <h3 className="text-lg font-black uppercase">
+              Fluxo de Caixa {chartMode === 'diario' ? 'Diário' : 'Mensal'}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setChartMode('diario')}
+                className={`px-3 py-1 text-xs font-black uppercase transition-colors ${chartMode === 'diario' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
+              >
+                Diário
+              </button>
+              <button
+                onClick={() => setChartMode('mensal')}
+                className={`px-3 py-1 text-xs font-black uppercase transition-colors ${chartMode === 'mensal' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
+              >
+                Mensal
+              </button>
             </div>
           </div>
+          <div className="flex-1">
+            <CashFlowChart data={chartMode === 'diario' ? chartData : chartDataMensal} height={350} />
+          </div>
+        </div>
 
-          {/* Chart: Donut por Obra */}
-          <div className="data-panel lg:col-span-4 flex flex-col p-6 md:p-7">
-            <div className="flex justify-between items-end mb-8">
-              <h3 className="text-lg font-black uppercase">
-                {donutMode === 'entradas' ? 'Entradas' : 'Saídas'} por Obra
-              </h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setDonutMode('entradas')}
-                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${donutMode === 'entradas' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
-                >
-                  Entradas
-                </button>
-                <button
-                  onClick={() => setDonutMode('saidas')}
-                  className={`px-3 py-1 text-xs font-black uppercase transition-colors ${donutMode === 'saidas' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
-                >
-                  Saídas
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 flex flex-col justify-center">
-              <DonutChart
-                data={donutMode === 'entradas' ? obrasData : obrasSaidaData}
-                centerLabel={donutMode === 'entradas' ? 'Entradas' : 'Saídas'}
-                centerValue={formatCompact(donutMode === 'entradas' ? totalRecebimento : totalSaidasObra)}
-                height={220}
-              />
+        {/* Chart: Donut por Obra */}
+        <div className="data-panel lg:col-span-4 flex flex-col p-6 md:p-7">
+          <div className="flex justify-between items-end mb-8">
+            <h3 className="text-lg font-black uppercase">
+              {donutMode === 'entradas' ? 'Entradas' : 'Saídas'} por Obra
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDonutMode('entradas')}
+                className={`px-3 py-1 text-xs font-black uppercase transition-colors ${donutMode === 'entradas' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
+              >
+                Entradas
+              </button>
+              <button
+                onClick={() => setDonutMode('saidas')}
+                className={`px-3 py-1 text-xs font-black uppercase transition-colors ${donutMode === 'saidas' ? 'bg-dark text-white' : 'border-2 border-dark text-dark hover:bg-bgBase'}`}
+              >
+                Saídas
+              </button>
             </div>
           </div>
-
-          {/* Extrato */}
-          <div className="data-panel lg:col-span-12 p-6 md:p-7">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
-              <h3 className="text-lg font-black uppercase">Extrato de Movimentação Financeira</h3>
-              <div className="flex gap-3">
-                <button onClick={handleExtratoXLSX} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
-                  <Sheet className="h-4 w-4" />XLSX
-                </button>
-                <button onClick={handleExtratoPDF} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
-                  <FileText className="h-4 w-4" />PDF
-                </button>
-              </div>
-            </div>
-            <DataTable
-              data={taggedExtratoData}
-              columns={extratoCols as ColumnDef<ExtratoRow, unknown>[]}
-              searchPlaceholder="Buscar e pressione Enter para filtrar..."
-              pageSize={50}
-              searchTags={searchTags}
-              onAddTag={addTag}
-              onRemoveTag={removeTag}
-              footerRow={
-                <tr className="border-t-2 border-dark bg-bgBase font-black">
-                  <td colSpan={4} className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">
-                    {searchTags.length > 0 ? 'Total Filtrado' : 'Total'}
-                  </td>
-                  <td className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">—</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-emerald-700 font-black">{formatCurrency(taggedExtratoTotals.entrada)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-red-700 font-black">{formatCurrency(taggedExtratoTotals.saida)}</td>
-                  <td></td>
-                </tr>
-              }
+          <div className="flex-1 flex flex-col justify-center">
+            <DonutChart
+              data={donutMode === 'entradas' ? obrasData : obrasSaidaData}
+              centerLabel={donutMode === 'entradas' ? 'Entradas' : 'Saídas'}
+              centerValue={formatCompact(donutMode === 'entradas' ? totalRecebimento : totalSaidasObra)}
+              height={220}
             />
           </div>
+        </div>
 
-          {/* Pivot Table */}
-          <div className="data-panel lg:col-span-12 p-6 md:p-7">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
-              <h3 className="text-lg font-black uppercase">Fluxo de Caixa por Dia</h3>
-              <div className="flex gap-3">
-                <button onClick={handleExportXLSX} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
-                  <Sheet className="h-4 w-4" />XLSX
-                </button>
-                <button onClick={handleExportPDF} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
-                  <FileText className="h-4 w-4" />PDF
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto block-border">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-dark bg-bgBase">
-                    <th className="sticky left-0 bg-bgBase z-10 text-left px-4 py-3 font-black uppercase text-dark min-w-[160px] border-b-2 border-dark">Rótulos de Linha</th>
-                    {diasData.map((d) => (
-                      <th key={d.data} className="text-right px-3 py-3 font-black uppercase text-dark whitespace-nowrap min-w-[100px] border-b-2 border-dark">{d.data}</th>
-                    ))}
-                    <th className="text-right px-3 py-3 font-black uppercase text-dark whitespace-nowrap min-w-[110px] border-b-2 border-dark">Total Geral</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-grid bg-emerald-50">
-                    <td className="sticky left-0 z-10 px-4 py-2 font-black bg-emerald-50">— Entrada</td>
-                    {diasData.map((d) => (
-                      <td key={d.data} className="text-right px-3 py-2 tabular-nums font-black text-emerald-700">
-                        {d.entradas > 0 ? formatCurrency(d.entradas) : <span className="text-grid">-</span>}
-                      </td>
-                    ))}
-                    <td className="text-right px-3 py-2 tabular-nums font-black text-emerald-700">
-                      {formatCurrency(diasData.reduce((s, d) => s + d.entradas, 0))}
-                    </td>
-                  </tr>
-                  {obrasBreakdown.obrasEntrada.map((obra) => {
-                    const byDate = obrasBreakdown.entradasByObra[obra]
-                    const total = Object.values(byDate).reduce((s: number, v) => s + v, 0)
-                    return (
-                      <tr key={`e-${obra}`} className="border-b border-grid">
-                        <td className="sticky left-0 z-10 px-4 py-1.5 pl-8 text-muted-foreground bg-white">{obra}</td>
-                        {diasData.map((d) => (
-                          <td key={d.data} className="text-right px-3 py-1.5 tabular-nums text-emerald-600">
-                            {byDate[d.data] ? formatCurrency(byDate[d.data]) : <span className="text-grid">-</span>}
-                          </td>
-                        ))}
-                        <td className="text-right px-3 py-1.5 tabular-nums text-emerald-600 font-bold">{formatCurrency(total)}</td>
-                      </tr>
-                    )
-                  })}
-                  <tr className="border-b border-grid bg-red-50">
-                    <td className="sticky left-0 z-10 px-4 py-2 font-black bg-red-50">— Saída</td>
-                    {diasData.map((d) => (
-                      <td key={d.data} className="text-right px-3 py-2 tabular-nums font-black text-red-700">
-                        {d.saidas > 0 ? formatCurrency(d.saidas) : <span className="text-grid">-</span>}
-                      </td>
-                    ))}
-                    <td className="text-right px-3 py-2 tabular-nums font-black text-red-700">
-                      {formatCurrency(diasData.reduce((s, d) => s + d.saidas, 0))}
-                    </td>
-                  </tr>
-                  {obrasBreakdown.obrasSaida.map((obra) => {
-                    const byDate = obrasBreakdown.saidasByObra[obra]
-                    const total = Object.values(byDate).reduce((s: number, v) => s + v, 0)
-                    return (
-                      <tr key={`s-${obra}`} className="border-b border-grid">
-                        <td className="sticky left-0 z-10 px-4 py-1.5 pl-8 text-muted-foreground bg-white">{obra}</td>
-                        {diasData.map((d) => (
-                          <td key={d.data} className="text-right px-3 py-1.5 tabular-nums text-red-600">
-                            {byDate[d.data] ? formatCurrency(byDate[d.data]) : <span className="text-grid">-</span>}
-                          </td>
-                        ))}
-                        <td className="text-right px-3 py-1.5 tabular-nums text-red-600 font-bold">{formatCurrency(total)}</td>
-                      </tr>
-                    )
-                  })}
-                  <tr className="border-b border-grid">
-                    <td className="sticky left-0 bg-white z-10 px-4 py-2 font-black">Saldo Acumulado</td>
-                    {diasData.map((d) => (
-                      <td key={d.data} className={`text-right px-3 py-2 tabular-nums font-black ${d.acumulado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                        {formatCurrency(d.acumulado)}
-                      </td>
-                    ))}
-                    <td className="text-right px-3 py-2 tabular-nums font-black text-muted-foreground">-</td>
-                  </tr>
-                  <tr className="bg-orange-50">
-                    <td className="sticky left-0 z-10 px-4 py-2 font-black bg-orange-50">Necessidade de Aporte</td>
-                    {necessidadeAporte.map((v, i) => (
-                      <td key={diasData[i].data} className="text-right px-3 py-2 tabular-nums font-black text-red-700">
-                        {v !== null ? formatCurrency(v) : <span className="text-grid">-</span>}
-                      </td>
-                    ))}
-                    <td className="text-right px-3 py-2 tabular-nums font-black text-red-700">
-                      {(() => { const t = necessidadeAporte.reduce((s: number, v) => s + (v ?? 0), 0); return t !== 0 ? formatCurrency(t) : <span className="text-grid">-</span> })()}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+        {/* Extrato */}
+        <div className="data-panel lg:col-span-12 p-6 md:p-7">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
+            <h3 className="text-lg font-black uppercase">Extrato de Movimentação Financeira</h3>
+            <div className="flex gap-3">
+              <button onClick={handleExtratoXLSX} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
+                <Sheet className="h-4 w-4" />XLSX
+              </button>
+              <button onClick={handleExtratoPDF} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
+                <FileText className="h-4 w-4" />PDF
+              </button>
             </div>
           </div>
-
+          <DataTable
+            data={taggedExtratoData}
+            columns={extratoCols as ColumnDef<ExtratoRow, unknown>[]}
+            searchPlaceholder="Buscar e pressione Enter para filtrar..."
+            pageSize={50}
+            searchTags={searchTags}
+            onAddTag={addTag}
+            onRemoveTag={removeTag}
+            footerRow={
+              <tr className="border-t-2 border-dark bg-bgBase font-black">
+                <td colSpan={4} className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">
+                  {searchTags.length > 0 ? 'Total Filtrado' : 'Total'}
+                </td>
+                <td className="px-4 py-3 text-right text-xs font-black uppercase text-gray-500">—</td>
+                <td className="px-4 py-3 text-right tabular-nums text-emerald-700 font-black">{formatCurrency(taggedExtratoTotals.entrada)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-red-700 font-black">{formatCurrency(taggedExtratoTotals.saida)}</td>
+                <td></td>
+              </tr>
+            }
+          />
         </div>
+
+        {/* Pivot Table */}
+        <div className="data-panel lg:col-span-12 p-6 md:p-7">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
+            <h3 className="text-lg font-black uppercase">Fluxo de Caixa por Dia</h3>
+            <div className="flex gap-3">
+              <button onClick={handleExportXLSX} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
+                <Sheet className="h-4 w-4" />XLSX
+              </button>
+              <button onClick={handleExportPDF} className="flex items-center gap-2 bg-dark text-white font-black uppercase text-xs px-4 py-2 border-2 border-dark hover:bg-brand hover:text-dark transition-colors">
+                <FileText className="h-4 w-4" />PDF
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto block-border">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b-2 border-dark bg-bgBase">
+                  <th className="sticky left-0 bg-bgBase z-10 text-left px-4 py-3 font-black uppercase text-dark min-w-[160px] border-b-2 border-dark">Rótulos de Linha</th>
+                  {diasData.map((d) => (
+                    <th key={d.data} className="text-right px-3 py-3 font-black uppercase text-dark whitespace-nowrap min-w-[100px] border-b-2 border-dark">{d.data}</th>
+                  ))}
+                  <th className="text-right px-3 py-3 font-black uppercase text-dark whitespace-nowrap min-w-[110px] border-b-2 border-dark">Total Geral</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-grid bg-emerald-50">
+                  <td className="sticky left-0 z-10 px-4 py-2 font-black bg-emerald-50">— Entrada</td>
+                  {diasData.map((d) => (
+                    <td key={d.data} className="text-right px-3 py-2 tabular-nums font-black text-emerald-700">
+                      {d.entradas > 0 ? formatCurrency(d.entradas) : <span className="text-grid">-</span>}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 tabular-nums font-black text-emerald-700">
+                    {formatCurrency(diasData.reduce((s, d) => s + d.entradas, 0))}
+                  </td>
+                </tr>
+                {obrasBreakdown.obrasEntrada.map((obra) => {
+                  const byDate = obrasBreakdown.entradasByObra[obra]
+                  const total = Object.values(byDate).reduce((s: number, v) => s + v, 0)
+                  return (
+                    <tr key={`e-${obra}`} className="border-b border-grid">
+                      <td className="sticky left-0 z-10 px-4 py-1.5 pl-8 text-muted-foreground bg-white">{obra}</td>
+                      {diasData.map((d) => (
+                        <td key={d.data} className="text-right px-3 py-1.5 tabular-nums text-emerald-600">
+                          {byDate[d.data] ? formatCurrency(byDate[d.data]) : <span className="text-grid">-</span>}
+                        </td>
+                      ))}
+                      <td className="text-right px-3 py-1.5 tabular-nums text-emerald-600 font-bold">{formatCurrency(total)}</td>
+                    </tr>
+                  )
+                })}
+                <tr className="border-b border-grid bg-red-50">
+                  <td className="sticky left-0 z-10 px-4 py-2 font-black bg-red-50">— Saída</td>
+                  {diasData.map((d) => (
+                    <td key={d.data} className="text-right px-3 py-2 tabular-nums font-black text-red-700">
+                      {d.saidas > 0 ? formatCurrency(d.saidas) : <span className="text-grid">-</span>}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 tabular-nums font-black text-red-700">
+                    {formatCurrency(diasData.reduce((s, d) => s + d.saidas, 0))}
+                  </td>
+                </tr>
+                {obrasBreakdown.obrasSaida.map((obra) => {
+                  const byDate = obrasBreakdown.saidasByObra[obra]
+                  const total = Object.values(byDate).reduce((s: number, v) => s + v, 0)
+                  return (
+                    <tr key={`s-${obra}`} className="border-b border-grid">
+                      <td className="sticky left-0 z-10 px-4 py-1.5 pl-8 text-muted-foreground bg-white">{obra}</td>
+                      {diasData.map((d) => (
+                        <td key={d.data} className="text-right px-3 py-1.5 tabular-nums text-red-600">
+                          {byDate[d.data] ? formatCurrency(byDate[d.data]) : <span className="text-grid">-</span>}
+                        </td>
+                      ))}
+                      <td className="text-right px-3 py-1.5 tabular-nums text-red-600 font-bold">{formatCurrency(total)}</td>
+                    </tr>
+                  )
+                })}
+                <tr className="border-b border-grid">
+                  <td className="sticky left-0 bg-white z-10 px-4 py-2 font-black">Saldo Acumulado</td>
+                  {diasData.map((d) => (
+                    <td key={d.data} className={`text-right px-3 py-2 tabular-nums font-black ${d.acumulado >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {formatCurrency(d.acumulado)}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 tabular-nums font-black text-muted-foreground">-</td>
+                </tr>
+                <tr className="bg-orange-50">
+                  <td className="sticky left-0 z-10 px-4 py-2 font-black bg-orange-50">Necessidade de Aporte</td>
+                  {necessidadeAporte.map((v, i) => (
+                    <td key={diasData[i].data} className="text-right px-3 py-2 tabular-nums font-black text-red-700">
+                      {v !== null ? formatCurrency(v) : <span className="text-grid">-</span>}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-2 tabular-nums font-black text-red-700">
+                    {(() => { const t = necessidadeAporte.reduce((s: number, v) => s + (v ?? 0), 0); return t !== 0 ? formatCurrency(t) : <span className="text-grid">-</span> })()}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
-    </div>
+    </FilteredPage>
   )
 }

@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Filter, LogOut, Menu, RefreshCw } from 'lucide-react'
+import { LogOut, Menu, RefreshCw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSync, useStatus } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
@@ -11,10 +11,10 @@ interface TopHeaderProps {
   onOpenNav: () => void
 }
 
-const pageMeta: Record<string, { title: string; section: string; supportsFilters?: boolean }> = {
-  '/receitas': { title: 'Receitas', section: 'Operação', supportsFilters: true },
-  '/despesas': { title: 'Despesas', section: 'Operação', supportsFilters: true },
-  '/fluxo': { title: 'Fluxo de Caixa', section: 'Operação', supportsFilters: true },
+const pageMeta: Record<string, { title: string; section: string }> = {
+  '/receitas': { title: 'Receitas', section: 'Operação' },
+  '/despesas': { title: 'Despesas', section: 'Operação' },
+  '/fluxo': { title: 'Fluxo de Caixa', section: 'Operação' },
   '/fluxo-obras': { title: 'Fluxo Obras', section: 'Obras' },
   '/config': { title: 'Configurações', section: 'Sistema' },
   '/admin': { title: 'Administração', section: 'Acesso' },
@@ -32,7 +32,6 @@ export function TopHeader({ onOpenNav }: TopHeaderProps) {
   const sync = useSync()
   const { data: status } = useStatus()
   const filters = useFilterStore()
-  const toggleFilters = useFilterStore((s) => s.toggleSidebar)
   const { user, logout } = useAuthStore()
   const queryClient = useQueryClient()
   const meta = pageMeta[location.pathname] ?? { title: 'DashFinance', section: 'Sistema' }
@@ -68,17 +67,6 @@ export function TopHeader({ onOpenNav }: TopHeaderProps) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 md:gap-4">
-        {meta.supportsFilters && (
-          <button
-            type="button"
-            aria-label="Abrir filtros"
-            className="rounded-md border border-line p-2 text-muted-foreground transition-colors hover:border-brand hover:text-dark lg:hidden"
-            onClick={toggleFilters}
-          >
-            <Filter className="h-4 w-4" />
-          </button>
-        )}
-
         <div className="hidden min-w-0 text-right lg:block">
           <p className="max-w-[260px] truncate text-xs font-semibold text-dark" title={scope}>{scope}</p>
           <p className="text-[10px] text-muted-foreground">{formatDateRange(filters.dtInicio, filters.dtFim)}</p>
