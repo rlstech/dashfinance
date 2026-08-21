@@ -1,6 +1,12 @@
-import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { FluxoPlanejamentoResponse, GrupoObras, Periodo } from '@/types'
+import { formatCurrency } from './formatters'
+import {
+  createReport, drawMetaRow, drawKpiRow, drawFooter, drawCompactBand,
+  baseTableStyles, nowStamp,
+  INK, AMBER, POSITIVE, NEGATIVE, WHITE, ZEBRA, MARGIN_X,
+  type RGB, type ReportHandle,
+} from './pdfReport'
 
 export type ObraRender = FluxoPlanejamentoResponse & {
   _isEspecial?: boolean
@@ -26,22 +32,13 @@ export interface FluxoObrasExportData {
   demaisObras?: DemaisObrasData | null
 }
 
-// Paleta — alinhada com exportPivot.ts
-const COLOR_HEADER_BG: [number, number, number] = [40, 40, 40]
-const COLOR_BAND_DARK: [number, number, number] = [30, 30, 30]
-const COLOR_BAND_ACCENT: [number, number, number] = [244, 177, 131]
-const COLOR_BAND_OBRA: [number, number, number] = [252, 228, 214]
-const COLOR_ACC_ROW: [number, number, number] = [242, 242, 242]
-const COLOR_NEG: [number, number, number] = [192, 0, 0]
-const COLOR_WHITE: [number, number, number] = [255, 255, 255]
-const COLOR_DARK: [number, number, number] = [30, 30, 30]
-const COLOR_RULE: [number, number, number] = [200, 200, 200]
+const TITULO = 'Fluxo de Caixa Gerencial de Obras'
 
-const PAGE_W = 297
+// Faixa neutra para as seções por obra; o destaque fica na barra âmbar.
+const BAND_SECAO: RGB = [237, 242, 244]
+
 const PAGE_H = 210
-const MARGIN_X = 8
-
-const CONTENT_W = PAGE_W - MARGIN_X * 2 // 281
+const CONTENT_W = 281
 const LABEL_W = 38
 const TOTAL_W = 22
 
@@ -54,20 +51,6 @@ function fmt(v: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(v)
-}
-
-function fmtCurrencyHeader(v: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  }).format(v)
-}
-
-function nowStamp(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 type SectionRow = {
@@ -88,31 +71,38 @@ function buildBody(rows: SectionRow[]): string[][] {
   })
 }
 
-// Reserva vertical antes de iniciar uma seção; quebra de página se faltar espaço
-function ensureSpace(doc: jsPDF, currentY: number, needed: number): number {
-  if (currentY + needed > PAGE_H - MARGIN_X) {
-    doc.addPage()
-    return MARGIN_X + 4
+// Reserva vertical antes de iniciar uma seção; quebra de página se faltar
+// espaço, já descontando a faixa do rodapé.
+function ensureSpace(r: ReportHandle, currentY: number, needed: number, scope: string): number {
+  if (currentY + needed > PAGE_H - 14) {
+    r.doc.addPage()
+    return drawCompactBand(r, TITULO, scope)
   }
   return currentY
 }
 
-// Renderiza um título de seção em forma de banner colorido
+// Título de seção em faixa; `accent` desenha a barra vertical à esquerda.
 function drawBanner(
-  doc: jsPDF,
+  r: ReportHandle,
   y: number,
   text: string,
   rightText: string | undefined,
-  fill: [number, number, number],
-  textColor: [number, number, number],
+  fill: RGB,
+  textColor: RGB,
+  accent?: RGB,
 ): number {
+  const { doc } = r
   const h = 6.5
   doc.setFillColor(...fill)
   doc.rect(MARGIN_X, y, CONTENT_W, h, 'F')
+  if (accent) {
+    doc.setFillColor(...accent)
+    doc.rect(MARGIN_X, y, 1.5, h, 'F')
+  }
   doc.setTextColor(...textColor)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.5)
-  doc.text(text, MARGIN_X + 2, y + h - 2)
+  doc.text(text, MARGIN_X + (accent ? 4 : 2), y + h - 2)
   if (rightText) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
@@ -134,58 +124,57 @@ function makeColStyles(nCols: number): Record<number, object> {
 }
 
 function renderTable(
-  doc: jsPDF,
+  r: ReportHandle,
   startY: number,
   rows: SectionRow[],
   colunas: { label: string }[],
+  scope: string,
 ): number {
+  const { doc } = r
   const nCols = colunas.length
   const headers = ['Métrica', ...colunas.map((c) => c.label), 'Total']
   const body = buildBody(rows)
   const cellPad = nCols > 14 ? 1.0 : CELL_PAD
+  const base = baseTableStyles(FONT)
 
   autoTable(doc, {
+    ...base,
     startY,
     head: [headers],
     body,
-    theme: 'grid',
     tableWidth: CONTENT_W,
-    margin: { left: MARGIN_X, right: MARGIN_X, top: MARGIN_X + 4, bottom: MARGIN_X },
+    margin: { left: MARGIN_X, right: MARGIN_X, top: 20, bottom: 14 },
     styles: {
-      fontSize: FONT,
+      ...base.styles,
       cellPadding: { top: cellPad, bottom: cellPad, left: cellPad, right: cellPad },
-      halign: 'right',
-      overflow: 'linebreak',
-      lineColor: COLOR_RULE,
-      lineWidth: 0.1,
-    },
-    headStyles: {
-      fillColor: COLOR_HEADER_BG,
-      textColor: COLOR_WHITE,
-      fontStyle: 'bold',
-      fontSize: FONT,
-      halign: 'center',
     },
     columnStyles: makeColStyles(nCols),
     didParseCell: (hookData) => {
+      if (hookData.section === 'head') {
+        if (hookData.column.index === 0) hookData.cell.styles.halign = 'left'
+        return
+      }
       if (hookData.section !== 'body') return
       const row = rows[hookData.row.index]
       if (!row) return
 
       if (row.emphasis) {
-        hookData.cell.styles.fillColor = COLOR_ACC_ROW
+        hookData.cell.styles.fillColor = ZEBRA
         hookData.cell.styles.fontStyle = 'bold'
-        hookData.cell.styles.textColor = COLOR_DARK
+        hookData.cell.styles.lineWidth = { top: 0.3, right: 0, bottom: 0.1, left: 0 }
       }
-      // Coloração: negativos em vermelho (qualquer linha)
+      // Negativos em vermelho em qualquer linha; positivos com ênfase em verde.
       const raw = hookData.cell.raw as string
-      if (typeof raw === 'string' && raw.startsWith('-')) {
-        hookData.cell.styles.textColor = COLOR_NEG
+      if (hookData.column.index > 0 && typeof raw === 'string' && raw !== '') {
+        if (raw.startsWith('-')) hookData.cell.styles.textColor = NEGATIVE
+        else if (row.emphasis) hookData.cell.styles.textColor = POSITIVE
       }
-      // Label sempre alinhado à esquerda mesmo em colunas com halign right
       if (hookData.column.index === 0) {
         hookData.cell.styles.halign = 'left'
       }
+    },
+    didDrawPage: (hook) => {
+      if (hook.pageNumber > 1) drawCompactBand(r, TITULO, scope)
     },
   })
 
@@ -269,89 +258,68 @@ function buildDemaisObrasRows(d: DemaisObrasData): SectionRow[] {
 
 export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
   const { grupo, periodo, colunas, obras, consolidado, demaisObras } = data
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
-  // ── Cabeçalho ─────────────────────────────────────────────────────────────
-  let y = 12
-  doc.setTextColor(...COLOR_DARK)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.text('FLUXO DE CAIXA GERENCIAL DE OBRAS', MARGIN_X, y)
-  y += 6
+  const r = createReport({ orientation: 'landscape', title: TITULO, scope: grupo.nome })
+  const { doc } = r
 
-  doc.setFontSize(11)
-  doc.text(grupo.nome.toUpperCase(), MARGIN_X, y)
-  y += 5
+  const periodoLabel = colunas.length > 0
+    ? `${colunas[0].label} a ${colunas[colunas.length - 1].label}`
+    : String(periodo.anoInicio)
+  const obrasCount = obras.length
+
+  drawMetaRow(r, [
+    { label: 'Período', value: periodoLabel },
+    { label: 'Obras no grupo', value: String(obrasCount) },
+    { label: 'Gerado em', value: nowStamp() },
+  ])
 
   if (grupo.descricao) {
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
-    doc.text(grupo.descricao, MARGIN_X, y)
-    y += 4.5
+    doc.setFontSize(8.5)
+    doc.setTextColor(...INK)
+    doc.text(grupo.descricao, MARGIN_X, r.y)
+    r.y += 6
   }
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8.5)
-  const obrasCount = obras.length
-  const periodoLabel = colunas.length > 0
-    ? `PERÍODO: ${colunas[0].label} → ${colunas[colunas.length - 1].label}`
-    : `ANO: ${periodo.anoInicio}`
-  doc.text(
-    `${periodoLabel}  ·  OBRAS NO GRUPO: ${obrasCount}  ·  GERADO EM: ${nowStamp()}`,
-    MARGIN_X,
-    y,
-  )
-  y += 3
-
-  // Filete separador
-  doc.setDrawColor(...COLOR_DARK)
-  doc.setLineWidth(0.4)
-  doc.line(MARGIN_X, y, MARGIN_X + CONTENT_W, y)
-  y += 4
-
-  // Resumo executivo numérico no cabeçalho
   const totalCustoReal = totalOf(consolidado.custoReal)
   const totalRecReal = totalOf(consolidado.recReal)
   const saldoAnual = totalRecReal - totalCustoReal
-  doc.setFontSize(8.5)
-  doc.setFont('helvetica', 'bold')
-  doc.text(`CUSTO REAL: ${fmtCurrencyHeader(totalCustoReal)}`, MARGIN_X, y)
-  doc.text(
-    `RECEITA REALIZADA: ${fmtCurrencyHeader(totalRecReal)}`,
-    MARGIN_X + 95,
-    y,
-  )
-  if (saldoAnual < 0) doc.setTextColor(...COLOR_NEG)
-  doc.text(`SALDO: ${fmtCurrencyHeader(saldoAnual)}`, MARGIN_X + 195, y)
-  doc.setTextColor(...COLOR_DARK)
-  y += 6
+
+  drawKpiRow(r, [
+    { label: 'Custo real', value: formatCurrency(totalCustoReal), tone: NEGATIVE },
+    { label: 'Receita realizada', value: formatCurrency(totalRecReal), tone: POSITIVE },
+    { label: 'Saldo', value: formatCurrency(saldoAnual), tone: saldoAnual < 0 ? NEGATIVE : POSITIVE },
+  ])
+
+  let y = r.y
 
   // ── Seção: Consolidado ────────────────────────────────────────────────────
   y = drawBanner(
-    doc,
+    r,
     y,
     'CONSOLIDADO OPERACIONAL DO GRUPO',
     `${obrasCount} obra(s)${demaisObras ? ` · inclui Demais Obras (${demaisObras._greedyCount})` : ''}`,
-    COLOR_BAND_DARK,
-    COLOR_WHITE,
+    INK,
+    WHITE,
   )
-  y = renderTable(doc, y, buildConsolidadoRows(consolidado), colunas)
+  y = renderTable(r, y, buildConsolidadoRows(consolidado), colunas, grupo.nome)
   y += 6
 
   // ── Seção por obra ────────────────────────────────────────────────────────
   for (const obra of obras) {
     const rows = buildObraRows(obra)
     const estTableH = (rows.length + 1) * (FONT * 0.55) + 8 // estimativa conservadora
-    y = ensureSpace(doc, y, 8 + estTableH)
+    y = ensureSpace(r, y, 8 + estTableH, grupo.nome)
     y = drawBanner(
-      doc,
+      r,
       y,
       `OBRA: ${obra.obra_codigo}${obra._isEspecial ? '  ·  ESPECIAL' : ''}`,
       undefined,
-      COLOR_BAND_ACCENT,
-      COLOR_DARK,
+      BAND_SECAO,
+      INK,
+      AMBER,
     )
-    y = renderTable(doc, y, rows, colunas)
+    y = renderTable(r, y, rows, colunas, grupo.nome)
     y += 5
   }
 
@@ -359,36 +327,20 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
   if (demaisObras) {
     const rows = buildDemaisObrasRows(demaisObras)
     const estTableH = (rows.length + 1) * (FONT * 0.55) + 8
-    y = ensureSpace(doc, y, 8 + estTableH)
+    y = ensureSpace(r, y, 8 + estTableH, grupo.nome)
     y = drawBanner(
-      doc,
+      r,
       y,
       `DEMAIS OBRAS  ·  ${demaisObras._greedyCount} obra(s)  ·  ${demaisObras._greedyEmpresas.join(', ')}`,
       undefined,
-      COLOR_BAND_OBRA,
-      COLOR_DARK,
+      ZEBRA,
+      INK,
+      AMBER,
     )
-    y = renderTable(doc, y, rows, colunas)
+    y = renderTable(r, y, rows, colunas, grupo.nome)
   }
 
-  // ── Rodapé com paginação ──────────────────────────────────────────────────
-  const total = doc.getNumberOfPages()
-  for (let i = 1; i <= total; i++) {
-    doc.setPage(i)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(120, 120, 120)
-    const rodapeLabel = colunas.length > 0
-      ? `${grupo.nome} · ${colunas[0].label}→${colunas[colunas.length - 1].label}`
-      : `${grupo.nome} · ${periodo.anoInicio}`
-    doc.text(rodapeLabel, MARGIN_X, PAGE_H - 4)
-    doc.text(
-      `Página ${i} de ${total}`,
-      PAGE_W - MARGIN_X,
-      PAGE_H - 4,
-      { align: 'right' },
-    )
-  }
+  drawFooter(r, `${grupo.nome} · ${periodoLabel}`)
 
   const safeName = grupo.nome.replace(/[^a-zA-Z0-9]/g, '_')
   const periodoStr = colunas.length > 0

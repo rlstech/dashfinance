@@ -1,9 +1,8 @@
 import { startTransition, useMemo, useEffect, useState } from 'react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { FileSpreadsheet, FileText } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import * as XLSX from '@e965/xlsx'
+import { exportRegistrosPDF, exportRegistrosXLSX } from '@/lib/exportRegistros'
+import { POSITIVE, NEGATIVE } from '@/lib/pdfReport'
 import { FilteredPage } from '@/components/layout/FilteredPage'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DonutChart } from '@/components/charts/DonutChart'
@@ -177,66 +176,42 @@ export default function Receitas() {
     ? `${filters.dtInicio.split('-').reverse().join('/')} a ${filters.dtFim.split('-').reverse().join('/')}`
     : 'Período completo'
 
-  const handleExportXLSX = () => {
-    const aoa = [
-      ['RECEITAS'],
-      [`Empresa: ${empresaLabel}`],
-      [`Período: ${periodoLabel}`],
-      [`Total: ${formatCurrency(kpis.total)} (${filtered.length} registros)`],
-      [],
-      ['Obra', 'Cliente', 'Tipo', 'Data', 'Data Venc.', 'Status', 'Valor'],
-      ...filtered.map((r) => [r.obra, r.cliente, TIPO_LABEL[r.tipo] || r.tipo, r.data, r.data_venc, r.status, r.valor]),
-    ]
-    const ws = XLSX.utils.aoa_to_sheet(aoa)
-    ws['!cols'] = [{ wch: 35 }, { wch: 45 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 18 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Receitas')
-    XLSX.writeFile(wb, `receitas_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`)
-  }
+  const handleExportXLSX = () => exportRegistrosXLSX({
+    titulo: 'Receitas',
+    slug: 'receitas',
+    sheetName: 'Receitas',
+    empresaLabel,
+    periodoLabel,
+    headers: ['Obra', 'Cliente', 'Tipo', 'Data', 'Data Venc.', 'Status', 'Valor'],
+    linhas: filtered.map((r) => [r.obra, r.cliente, TIPO_LABEL[r.tipo] || r.tipo, r.data, r.data_venc, r.status, r.valor]),
+    total: kpis.total,
+    larguras: [35, 45, 20, 12, 12, 14, 18],
+  })
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const marginX = 10
-    let y = 12
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(30, 30, 30)
-    doc.text('RECEITAS', marginX, y)
-    y += 6
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Empresa: ${empresaLabel}`, marginX, y)
-    y += 5
-    doc.text(`Período: ${periodoLabel}`, marginX, y)
-    y += 5
-    doc.setFont('helvetica', 'bold')
-    doc.text(`Total: ${formatCurrency(kpis.total)} (${filtered.length} registros)`, marginX, y)
-    y += 8
-    const cols = ['Obra', 'Cliente', 'Tipo', 'Data Venc.', 'Status', 'Valor']
-    const rows = filtered.map((r) => [
+  const handleExportPDF = () => exportRegistrosPDF({
+    titulo: 'Receitas',
+    slug: 'receitas',
+    empresaLabel,
+    periodoLabel,
+    colunas: [
+      { header: 'Obra', width: 18 },
+      { header: 'Cliente', width: 82 },
+      { header: 'Tipo', width: 24 },
+      { header: 'Data Venc.', width: 22, align: 'center' },
+      { header: 'Status', width: 22, align: 'center' },
+      { header: 'Valor', width: 26, align: 'right' },
+    ],
+    linhas: filtered.map((r) => [
       r.obra, r.cliente, TIPO_LABEL[r.tipo] || r.tipo, r.data_venc, r.status,
       formatCurrency(r.valor),
-    ])
-    autoTable(doc, {
-      startY: y,
-      head: [cols],
-      body: rows,
-      foot: [['', '', '', '', 'TOTAL', formatCurrency(kpis.total)]],
-      theme: 'grid',
-      tableWidth: 190,
-      margin: { left: marginX, right: marginX },
-      showFoot: 'lastPage',
-      styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
-      headStyles: { fillColor: [64, 64, 64], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-      footStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-      columnStyles: {
-        0: { cellWidth: 16 }, 1: { cellWidth: 94 }, 2: { cellWidth: 22 },
-        3: { cellWidth: 22, halign: 'center' }, 4: { cellWidth: 16, halign: 'center' },
-        5: { cellWidth: 20, halign: 'right' },
-      },
-    })
-    doc.save(`receitas_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
-  }
+    ]),
+    total: kpis.total,
+    kpisExtras: [
+      { label: 'Recebido', value: formatCurrency(kpis.recebido), tone: POSITIVE },
+      { label: 'A receber', value: formatCurrency(kpis.aReceber) },
+      { label: 'Em atraso', value: formatCurrency(kpis.emAtraso), tone: NEGATIVE },
+    ],
+  })
 
   if (isLoading) {
     return (

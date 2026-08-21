@@ -1,7 +1,12 @@
-import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from '@e965/xlsx'
 import { formatCurrency } from './formatters'
+import {
+  createReport, drawMetaRow, drawKpiRow, drawFooter, drawCompactBand,
+  baseTableStyles, nowStamp, saveReport,
+  INK, MUTED, POSITIVE, NEGATIVE, ZEBRA, MARGIN_X,
+  type RGB,
+} from './pdfReport'
 
 export interface DiaDataExport {
   data: string
@@ -102,112 +107,165 @@ function buildRowData(data: PivotExportData) {
 
 // ─── PDF ────────────────────────────────────────────────────────────────────
 
-// Colors matching the Excel screenshot
-const COLOR_HEADER_BG: [number, number, number] = [64, 64, 64]
-const COLOR_GROUP_BG: [number, number, number] = [244, 177, 131]   // salmon — Entrada/Saída
-const COLOR_SUB_BG: [number, number, number] = [252, 228, 214]     // light peach — sub-obras
-const COLOR_SALDO_BG: [number, number, number] = [242, 242, 242]   // light gray — Saldo
-const COLOR_APORTE_BG: [number, number, number] = [252, 228, 214]  // same peach — Aporte
-const COLOR_NEG: [number, number, number] = [192, 0, 0]            // red for negatives
-const COLOR_WHITE: [number, number, number] = [255, 255, 255]
-const COLOR_DARK: [number, number, number] = [30, 30, 30]
+const TITULO_PIVOT = 'Fluxo de Caixa Diário'
+
+// Larguras fixas da coluna de rótulos e do total; os dias dividem o que sobra.
+const LABEL_W = 34
+const TOTAL_W = 24
+// Abaixo disso um valor em reais deixa de caber com folga — em vez de encolher
+// a fonte (o que tornava um trimestre ilegível), fatiamos os dias em blocos.
+const MIN_DAY_W = 15
+const MAX_DAY_W = 30
+
+function toneDoValor(v: number): RGB {
+  return v < 0 ? NEGATIVE : POSITIVE
+}
 
 export function exportPivotPDF(data: PivotExportData): void {
   const { diasData, empresaLabel, periodoLabel, saldoBancario } = data
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
-  const marginX = 8
-  let y = 12
+  const r = createReport({ orientation: 'landscape', title: TITULO_PIVOT, scope: empresaLabel })
+  const { doc } = r
 
-  // ── Header text ──
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(30, 30, 30)
-  doc.text(`FLUXO DE CAIXA DIÁRIO: ${empresaLabel}`, marginX, y)
-  y += 6
+  drawMetaRow(r, [
+    { label: 'Período', value: periodoLabel || '—' },
+    { label: 'Saldo bancário', value: saldoBancario !== null ? formatCurrency(saldoBancario) : 'N/D' },
+    { label: 'Gerado em', value: nowStamp() },
+  ])
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`PERÍODO: ${periodoLabel}`, marginX, y)
-  y += 5
+  const totalEntradas = diasData.reduce((s, d) => s + d.entradas, 0)
+  const totalSaidas = diasData.reduce((s, d) => s + d.saidas, 0)
+  const resultado = totalEntradas - totalSaidas
+  const saldoFinal = diasData.length > 0 ? diasData[diasData.length - 1].acumulado : 0
 
-  const saldoTxt = saldoBancario !== null ? formatCurrency(saldoBancario) : 'N/D'
-  doc.text(`SALDO BANCÁRIO: ${saldoTxt}`, marginX, y)
-  y += 8  // blank line
+  drawKpiRow(r, [
+    { label: 'Entradas', value: formatCurrency(totalEntradas), tone: POSITIVE },
+    { label: 'Saídas', value: formatCurrency(totalSaidas), tone: NEGATIVE },
+    { label: 'Resultado', value: formatCurrency(resultado), tone: toneDoValor(resultado) },
+    { label: 'Saldo final', value: formatCurrency(saldoFinal), tone: toneDoValor(saldoFinal) },
+  ])
 
-  // ── Build table data ──
-  const headers = buildHeaders(diasData)
   const rowData = buildRowData(data)
-  const bodyRows = rowData.map(r => [r.label, ...r.cells])
+  const nDias = diasData.length
+  const maxPorBloco = Math.max(1, Math.floor((r.contentW - LABEL_W - TOTAL_W) / MIN_DAY_W))
 
-  // Dynamic column widths — always fits exactly within page width
-  const pageW = 297 - marginX * 2
-  const labelW = 32
-  const totalW = 20
-  const available = pageW - labelW - totalW
-  const dateW = available / Math.max(diasData.length, 1)
-  const fontSize = dateW < 14 ? 6 : 7
-  const cellPad = dateW < 14 ? 1 : 1.5
+  // Blocos de tamanho uniforme: com 45 dias e teto de 14, sai 12/11/11/11 em
+  // vez de 14/14/14/3 — a última página não fica quase vazia.
+  const nBlocos = Math.max(1, Math.ceil(nDias / maxPorBloco))
+  const tamanhoBase = Math.floor(nDias / nBlocos)
+  const resto = nDias % nBlocos
 
-  const colStyles: Record<number, object> = {
-    0: { halign: 'left', cellWidth: labelW, fontStyle: 'bold' },
-    [headers.length - 1]: { cellWidth: totalW, fontStyle: 'bold' },
-  }
-  for (let i = 1; i < headers.length - 1; i++) {
-    colStyles[i] = { cellWidth: dateW }
+  const blocos: DiaDataExport[][] = []
+  let cursor = 0
+  for (let i = 0; i < nBlocos; i++) {
+    const tamanho = tamanhoBase + (i < resto ? 1 : 0)
+    blocos.push(diasData.slice(cursor, cursor + tamanho))
+    cursor += tamanho
   }
 
-  autoTable(doc, {
-    startY: y,
-    head: [headers],
-    body: bodyRows,
-    theme: 'grid',
-    tableWidth: pageW,
-    margin: { left: marginX, right: marginX },
-    styles: {
-      fontSize,
-      cellPadding: { top: cellPad, bottom: cellPad, left: cellPad, right: cellPad },
-      halign: 'right',
-      overflow: 'linebreak',
-    },
-    headStyles: {
-      fillColor: COLOR_HEADER_BG,
-      textColor: COLOR_WHITE,
-      fontStyle: 'bold',
-      fontSize,
-    },
-    columnStyles: colStyles,
-    didParseCell: (hookData) => {
-      if (hookData.section !== 'body') return
-      const row = rowData[hookData.row.index]
-      if (!row) return
+  blocos.forEach((bloco, bi) => {
+    const ultimo = bi === blocos.length - 1
+    const inicio = blocos.slice(0, bi).reduce((acc, b) => acc + b.length, 0)
 
-      // Background by row type
-      if (row.type === 'group-entrada' || row.type === 'group-saida') {
-        hookData.cell.styles.fillColor = COLOR_GROUP_BG
-        hookData.cell.styles.textColor = COLOR_DARK
-        hookData.cell.styles.fontStyle = 'bold'
-      } else if (row.type === 'sub') {
-        hookData.cell.styles.fillColor = COLOR_SUB_BG
-        hookData.cell.styles.textColor = COLOR_DARK
-      } else if (row.type === 'saldo') {
-        hookData.cell.styles.fillColor = COLOR_SALDO_BG
-        hookData.cell.styles.textColor = COLOR_DARK
-        hookData.cell.styles.fontStyle = 'bold'
-        // Red for negative values
-        const raw = hookData.cell.raw as string
-        if (raw && raw.startsWith('-')) {
-          hookData.cell.styles.textColor = COLOR_NEG
+    if (bi > 0) {
+      doc.addPage()
+      r.y = drawCompactBand(r, TITULO_PIVOT, empresaLabel)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...MUTED)
+      const faixa = bloco.length > 0 ? `${bloco[0].data} a ${bloco[bloco.length - 1].data}` : ''
+      doc.text(`Continuação · ${faixa}`, MARGIN_X, r.y)
+      r.y += 5
+    }
+
+    const headers = [
+      'Rótulos de Linha',
+      ...bloco.map((d) => d.data.slice(0, 5)),
+      ...(ultimo ? ['Total'] : []),
+    ]
+    const bodyRows = rowData.map((row) => [
+      row.label,
+      ...row.cells.slice(inicio, inicio + bloco.length),
+      ...(ultimo ? [row.cells[row.cells.length - 1]] : []),
+    ])
+
+    const disponivel = r.contentW - LABEL_W - (ultimo ? TOTAL_W : 0)
+    const dayW = Math.min(MAX_DAY_W, disponivel / Math.max(bloco.length, 1))
+
+    const colStyles: Record<number, object> = {
+      0: { halign: 'left', cellWidth: LABEL_W, fontStyle: 'bold' },
+    }
+    for (let i = 1; i <= bloco.length; i++) colStyles[i] = { cellWidth: dayW }
+    if (ultimo) colStyles[headers.length - 1] = { cellWidth: TOTAL_W, fontStyle: 'bold' }
+
+    const tableWidth = LABEL_W + bloco.length * dayW + (ultimo ? TOTAL_W : 0)
+    const base = baseTableStyles(7)
+
+    autoTable(doc, {
+      ...base,
+      startY: r.y,
+      tableWidth,
+      head: [headers],
+      body: bodyRows,
+      margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
+      styles: { ...base.styles, halign: 'right' },
+      headStyles: { ...base.headStyles },
+      columnStyles: colStyles,
+      didParseCell: (hook) => {
+        if (hook.section === 'head') {
+          if (hook.column.index === 0) hook.cell.styles.halign = 'left'
+          return
         }
-      } else if (row.type === 'aporte') {
-        hookData.cell.styles.fillColor = COLOR_APORTE_BG
-        hookData.cell.styles.textColor = COLOR_NEG
-        hookData.cell.styles.fontStyle = 'bold'
-      }
-    },
+        if (hook.section !== 'body') return
+        const row = rowData[hook.row.index]
+        if (!row) return
+        const isLabel = hook.column.index === 0
+
+        if (row.type === 'group-entrada' || row.type === 'group-saida') {
+          const tom = row.type === 'group-entrada' ? POSITIVE : NEGATIVE
+          hook.cell.styles.textColor = isLabel ? INK : tom
+          hook.cell.styles.fontStyle = 'bold'
+          hook.cell.styles.lineWidth = { top: 0.3, right: 0, bottom: 0.1, left: 0 }
+          if (isLabel) {
+            // O rótulo já vem com "— " do buildRowData; a barra de acento é
+            // reforço visual, nunca o único portador do significado.
+            hook.cell.text = [String(hook.cell.raw).replace(/^—\s*/, '').toUpperCase()]
+            hook.cell.styles.cellPadding = { top: 1.6, bottom: 1.6, left: 4, right: 2 }
+          }
+        } else if (row.type === 'sub') {
+          if (isLabel) {
+            // columnStyles[0] deixa a coluna inteira em negrito; a sub-obra é
+            // subordinada ao grupo, então volta a peso normal e ganha recuo.
+            hook.cell.styles.fontStyle = 'normal'
+            hook.cell.styles.textColor = MUTED
+            hook.cell.styles.cellPadding = { top: 1.6, bottom: 1.6, left: 7, right: 2 }
+          }
+        } else if (row.type === 'saldo') {
+          hook.cell.styles.fillColor = ZEBRA
+          hook.cell.styles.fontStyle = 'bold'
+          hook.cell.styles.lineWidth = { top: 0.3, right: 0, bottom: 0.1, left: 0 }
+          if (!isLabel) {
+            const dia = diasData[inicio + hook.column.index - 1]
+            if (dia) hook.cell.styles.textColor = toneDoValor(dia.acumulado)
+          }
+        } else if (row.type === 'aporte') {
+          hook.cell.styles.fontStyle = 'bold'
+          if (!isLabel) hook.cell.styles.textColor = NEGATIVE
+        }
+      },
+      willDrawCell: (hook) => {
+        if (hook.section !== 'body' || hook.column.index !== 0) return
+        const row = rowData[hook.row.index]
+        if (!row || (row.type !== 'group-entrada' && row.type !== 'group-saida')) return
+        const tom = row.type === 'group-entrada' ? POSITIVE : NEGATIVE
+        doc.setFillColor(...tom)
+        doc.rect(hook.cell.x, hook.cell.y + 0.6, 1.2, hook.cell.height - 1.2, 'F')
+      },
+    })
   })
 
-  doc.save(`fluxo_caixa_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
+  drawFooter(r, TITULO_PIVOT)
+  saveReport(doc, 'fluxo_caixa', empresaLabel)
 }
 
 // ─── XLSX ───────────────────────────────────────────────────────────────────
@@ -257,114 +315,108 @@ export interface ExtratoRowExport {
   conta: string
 }
 
+const TITULO_EXTRATO = 'Extrato de Movimentação Financeira'
+
 export function exportExtratoPDF(rows: ExtratoRowExport[], empresaLabel: string, periodoLabel: string): void {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const r = createReport({ orientation: 'portrait', title: TITULO_EXTRATO, scope: empresaLabel })
+  const { doc } = r
 
-  const marginX = 8
-  let y = 12
+  const totalEntrada = rows.reduce((s, x) => s + (x.entrada ?? 0), 0)
+  const totalSaida = rows.reduce((s, x) => s + (x.saida ?? 0), 0)
+  const saldoFinal = rows.length > 0 ? rows[rows.length - 1].saldo : 0
 
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(30, 30, 30)
-  doc.text(`EXTRATO DE MOVIMENTAÇÃO FINANCEIRA: ${empresaLabel}`, marginX, y)
-  y += 6
+  drawMetaRow(r, [
+    { label: 'Período', value: periodoLabel || '—' },
+    { label: 'Lançamentos', value: String(rows.length) },
+    { label: 'Gerado em', value: nowStamp() },
+  ])
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`PERÍODO: ${periodoLabel}`, marginX, y)
-  y += 8
+  drawKpiRow(r, [
+    { label: 'Entradas', value: formatCurrency(totalEntrada), tone: POSITIVE },
+    { label: 'Saídas', value: formatCurrency(totalSaida), tone: NEGATIVE },
+    { label: 'Saldo final', value: formatCurrency(saldoFinal), tone: toneDoValor(saldoFinal) },
+  ])
 
   const headers = ['Data', 'Tipo', 'Descrição', 'Obra', 'Empresa', 'Entrada', 'Saída', 'Saldo']
-  const totalEntrada = rows.reduce((s, r) => s + (r.entrada ?? 0), 0)
-  const totalSaida = rows.reduce((s, r) => s + (r.saida ?? 0), 0)
   const bodyRows = [
-    ...rows.map(r => [
-      r.data,
-      r.tipo,
-      r.descricao,
-      r.obra,
-      r.empresa,
-      r.entrada !== null ? fmt(r.entrada) : '',
-      r.saida !== null ? fmt(r.saida) : '',
-      fmt(r.saldo),
+    ...rows.map((x) => [
+      x.data,
+      x.tipo,
+      x.descricao,
+      x.obra,
+      x.empresa,
+      x.entrada !== null ? fmt(x.entrada) : '',
+      x.saida !== null ? fmt(x.saida) : '',
+      fmt(x.saldo),
     ]),
     ['', '', '', '', 'Total', fmt(totalEntrada), fmt(totalSaida), ''],
   ]
 
+  // Somam exatamente os 194mm úteis do A4 retrato. "Saldo Inicial" e os nomes
+  // de empresa precisam caber sem quebrar; só Descrição pode fluir em 2 linhas.
   const colStyles: Record<number, object> = {
     0: { cellWidth: 16, halign: 'left' },
-    1: { cellWidth: 16, halign: 'left' },
-    2: { cellWidth: 42, halign: 'left' },
-    3: { cellWidth: 16, halign: 'left' },
-    4: { cellWidth: 18, halign: 'left' },
-    5: { cellWidth: 24, halign: 'right' },
-    6: { cellWidth: 24, halign: 'right' },
-    7: { cellWidth: 24, halign: 'right' },
+    1: { cellWidth: 19, halign: 'left' },
+    2: { cellWidth: 50, halign: 'left' },
+    3: { cellWidth: 14, halign: 'left' },
+    4: { cellWidth: 24, halign: 'left' },
+    5: { cellWidth: 22 },
+    6: { cellWidth: 22 },
+    7: { cellWidth: 27 },
   }
 
+  const base = baseTableStyles(7)
+
   autoTable(doc, {
-    startY: y,
+    ...base,
+    startY: r.y,
     head: [headers],
     body: bodyRows,
-    theme: 'grid',
-    margin: { left: marginX, right: marginX },
-    styles: {
-      fontSize: 7,
-      cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 },
-      halign: 'right',
-      overflow: 'linebreak',
-    },
-    headStyles: {
-      fillColor: COLOR_HEADER_BG,
-      textColor: COLOR_WHITE,
-      fontStyle: 'bold',
-    },
+    margin: { left: MARGIN_X, right: MARGIN_X, top: 20, bottom: 14 },
     columnStyles: colStyles,
-    didParseCell: (hookData) => {
-      if (hookData.section !== 'body') return
-      const isTotalRow = hookData.row.index === rows.length
-      const row = rows[hookData.row.index]
+    didParseCell: (hook) => {
+      if (hook.section === 'head') {
+        if (hook.column.index <= 4) hook.cell.styles.halign = 'left'
+        return
+      }
+      if (hook.section !== 'body') return
 
-      if (isTotalRow) {
-        hookData.cell.styles.fillColor = COLOR_SALDO_BG
-        hookData.cell.styles.fontStyle = 'bold'
-        if (hookData.column.index === 5) {
-          hookData.cell.styles.textColor = [34, 197, 94]
-        } else if (hookData.column.index === 6) {
-          hookData.cell.styles.textColor = COLOR_NEG
-        }
+      const isTotal = hook.row.index === rows.length
+      if (isTotal) {
+        hook.cell.styles.fillColor = ZEBRA
+        hook.cell.styles.fontStyle = 'bold'
+        hook.cell.styles.lineWidth = { top: 0.3, right: 0, bottom: 0.1, left: 0 }
+        if (hook.column.index === 5) hook.cell.styles.textColor = POSITIVE
+        else if (hook.column.index === 6) hook.cell.styles.textColor = NEGATIVE
         return
       }
 
+      const row = rows[hook.row.index]
       if (!row) return
 
       if (row.tipo === 'Saldo Inicial') {
-        hookData.cell.styles.fillColor = COLOR_SALDO_BG
-        hookData.cell.styles.fontStyle = 'bold'
-      } else if (row.tipo === 'Entrada') {
-        if (hookData.column.index === 5) {
-          hookData.cell.styles.textColor = [34, 197, 94]
-          hookData.cell.styles.fontStyle = 'bold'
-        }
-      } else if (row.tipo === 'Saída') {
-        if (hookData.column.index === 6) {
-          hookData.cell.styles.textColor = COLOR_NEG
-          hookData.cell.styles.fontStyle = 'bold'
-        }
+        hook.cell.styles.fillColor = ZEBRA
+        hook.cell.styles.fontStyle = 'bold'
+      } else if (row.tipo === 'Entrada' && hook.column.index === 5) {
+        hook.cell.styles.textColor = POSITIVE
+        hook.cell.styles.fontStyle = 'bold'
+      } else if (row.tipo === 'Saída' && hook.column.index === 6) {
+        hook.cell.styles.textColor = NEGATIVE
+        hook.cell.styles.fontStyle = 'bold'
       }
 
-      if (hookData.column.index === 7) {
-        hookData.cell.styles.fontStyle = 'bold'
-        if (row.saldo < 0) {
-          hookData.cell.styles.textColor = COLOR_NEG
-        } else {
-          hookData.cell.styles.textColor = [34, 197, 94]
-        }
+      if (hook.column.index === 7) {
+        hook.cell.styles.fontStyle = 'bold'
+        hook.cell.styles.textColor = toneDoValor(row.saldo)
       }
+    },
+    didDrawPage: (hook) => {
+      if (hook.pageNumber > 1) drawCompactBand(r, TITULO_EXTRATO, empresaLabel)
     },
   })
 
-  doc.save(`extrato_movimentacao_financeira_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
+  drawFooter(r, TITULO_EXTRATO)
+  saveReport(doc, 'extrato_movimentacao_financeira', empresaLabel)
 }
 
 export function exportExtratoXLSX(rows: ExtratoRowExport[], empresaLabel: string, periodoLabel: string): void {
@@ -408,21 +460,6 @@ export function exportExtratoXLSX(rows: ExtratoRowExport[], empresaLabel: string
     { wch: 10 },
     { wch: 14 },
   ]
-
-  // Alinhar à esquerda colunas Descrição (2), Obra (3) e Empresa (4)
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    for (const C of [2, 3, 4]) {
-      const cellRef = XLSX.utils.encode_cell({ r: R, c: C })
-      const cell = ws[cellRef]
-      if (cell) {
-        cell.s = {
-          ...(cell.s || {}),
-          alignment: { horizontal: 'left', vertical: 'center' },
-        }
-      }
-    }
-  }
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Extrato Movimentação Financeira')

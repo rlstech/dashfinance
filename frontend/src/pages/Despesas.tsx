@@ -1,9 +1,8 @@
 import { startTransition, useMemo, useEffect, useState } from 'react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { FileSpreadsheet, FileText } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import * as XLSX from '@e965/xlsx'
+import { exportRegistrosPDF, exportRegistrosXLSX } from '@/lib/exportRegistros'
+import { POSITIVE, NEGATIVE } from '@/lib/pdfReport'
 import { FilteredPage } from '@/components/layout/FilteredPage'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DonutChart } from '@/components/charts/DonutChart'
@@ -167,66 +166,44 @@ export default function Despesas() {
     ? `${dtInicio.split('-').reverse().join('/')} a ${dtFim.split('-').reverse().join('/')}`
     : 'Período completo'
 
-  function handleExportXLSX() {
-    const aoa = [
-      ['DESPESAS'],
-      [`Empresa: ${empresaLabel}`],
-      [`Período: ${periodoLabel}`],
-      [`Total: ${formatCurrency(kpis.total)} (${filteredData.length} registros)`],
-      [],
-      ['Obra', 'Data', 'Fornecedor', 'Banco', 'Conta', 'Categoria', 'Origem', 'Valor'],
-      ...filteredData.map((r) => [r.obra, r.data, r.fornecedor, r.banco, r.conta, r.categoria, r.origem, r.valor]),
-    ]
-    const ws = XLSX.utils.aoa_to_sheet(aoa)
-    ws['!cols'] = [{ wch: 35 }, { wch: 12 }, { wch: 40 }, { wch: 20 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 18 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Despesas')
-    XLSX.writeFile(wb, `despesas_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`)
-  }
+  const handleExportXLSX = () => exportRegistrosXLSX({
+    titulo: 'Despesas',
+    slug: 'despesas',
+    sheetName: 'Despesas',
+    empresaLabel,
+    periodoLabel,
+    headers: ['Obra', 'Data', 'Fornecedor', 'Banco', 'Conta', 'Categoria', 'Origem', 'Valor'],
+    linhas: filteredData.map((r) => [r.obra, r.data, r.fornecedor, r.banco, r.conta, r.categoria, r.origem, r.valor]),
+    total: kpis.total,
+    larguras: [35, 12, 40, 20, 18, 20, 14, 18],
+  })
 
-  function handleExportPDF() {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const marginX = 10
-    let y = 12
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(30, 30, 30)
-    doc.text('DESPESAS', marginX, y)
-    y += 6
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Empresa: ${empresaLabel}`, marginX, y)
-    y += 5
-    doc.text(`Período: ${periodoLabel}`, marginX, y)
-    y += 5
-    doc.setFont('helvetica', 'bold')
-    doc.text(`Total: ${formatCurrency(kpis.total)} (${filteredData.length} registros)`, marginX, y)
-    y += 8
-    const cols = ['Obra', 'Data', 'Fornecedor', 'Banco', 'Conta', 'Categoria', 'Origem', 'Valor']
-    const rows = filteredData.map((r) => [
+  const handleExportPDF = () => exportRegistrosPDF({
+    titulo: 'Despesas',
+    slug: 'despesas',
+    empresaLabel,
+    periodoLabel,
+    colunas: [
+      { header: 'Obra', width: 30 },
+      { header: 'Data', width: 16, align: 'center' },
+      { header: 'Fornecedor', width: 48 },
+      { header: 'Banco', width: 22 },
+      { header: 'Conta', width: 18 },
+      { header: 'Categoria', width: 22 },
+      { header: 'Origem', width: 16, align: 'center' },
+      { header: 'Valor', width: 22, align: 'right' },
+    ],
+    linhas: filteredData.map((r) => [
       r.obra, r.data, r.fornecedor, r.banco, r.conta, r.categoria, r.origem,
       formatCurrency(r.valor),
-    ])
-    autoTable(doc, {
-      startY: y,
-      head: [cols],
-      body: rows,
-      foot: [['', '', '', '', '', '', 'TOTAL', formatCurrency(kpis.total)]],
-      theme: 'grid',
-      tableWidth: 190,
-      margin: { left: marginX, right: marginX },
-      showFoot: 'lastPage',
-      styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
-      headStyles: { fillColor: [64, 64, 64], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-      footStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-      columnStyles: {
-        0: { cellWidth: 33 }, 1: { cellWidth: 16, halign: 'center' }, 2: { cellWidth: 46 },
-        3: { cellWidth: 20 }, 4: { cellWidth: 17 }, 5: { cellWidth: 20 },
-        6: { cellWidth: 16, halign: 'center' }, 7: { cellWidth: 22, halign: 'right' },
-      },
-    })
-    doc.save(`despesas_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
-  }
+    ]),
+    total: kpis.total,
+    kpisExtras: [
+      { label: 'Pago', value: formatCurrency(kpis.pago), tone: POSITIVE },
+      { label: 'Em emissão', value: formatCurrency(kpis.emissao) },
+      { label: 'A confirmar', value: formatCurrency(kpis.aConfirmar), tone: NEGATIVE },
+    ],
+  })
 
   if (isLoading) {
     return (
