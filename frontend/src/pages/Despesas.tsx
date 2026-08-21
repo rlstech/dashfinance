@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import { startTransition, useMemo, useEffect, useState } from 'react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { FileSpreadsheet, FileText } from 'lucide-react'
 import jsPDF from 'jspdf'
@@ -108,7 +108,7 @@ export default function Despesas() {
   useEffect(() => {
     if (!dtInicio || !dtFim) return
     const days = (new Date(dtFim).getTime() - new Date(dtInicio).getTime()) / 86_400_000
-    setChartMode(days > 30 ? 'monthly' : 'daily')
+    startTransition(() => setChartMode(days > 30 ? 'monthly' : 'daily'))
   }, [dtInicio, dtFim])
 
   const timelineData = useMemo(() => {
@@ -145,7 +145,7 @@ export default function Despesas() {
     let total = 0
     const CHART_COLORS = ['#2ea043', '#1f6feb', '#d29922', '#8957e5', '#f85149', '#373e47', '#005cc5', '#e36209']
     const formatTopN = (arr: [string, number][], n = 6) => {
-      let result = arr.slice(0, n)
+      const result = arr.slice(0, n)
       const others = arr.slice(n).reduce((acc, curr) => acc + curr[1], 0)
       if (others > 0) result.push(['Outros', others])
       return result.map(([name, value], i) => ({ name: name || 'N/A', value, color: CHART_COLORS[i % CHART_COLORS.length] }))
@@ -230,9 +230,9 @@ export default function Despesas() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full">
+      <div className="flex h-full min-h-0">
         <FilterSidebar showOrigem />
-        <div className="p-8 overflow-auto flex-1 space-y-8">
+        <div className="min-w-0 flex-1 space-y-6 overflow-auto p-5 md:p-7">
           <div className="h-44 bg-white block-border animate-pulse" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 h-80 bg-white block-border animate-pulse" />
@@ -245,41 +245,39 @@ export default function Despesas() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       <FilterSidebar showOrigem />
 
-      <div className="p-8 overflow-auto flex-1">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="min-w-0 flex-1 overflow-auto p-5 md:p-7">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
 
           {/* Hero KPI */}
-          <div className="lg:col-span-12 relative p-8 block-border shadow-hard bg-white flex flex-col xl:flex-row justify-between items-start xl:items-end gap-8">
-            <div className="absolute top-0 left-0 bg-brand text-dark text-xs font-black uppercase px-3 py-1 tracking-widest">
-              Despesas Consolidadas
-            </div>
-            <div className="mt-4">
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide">
-                Total do Período <span className="text-brand ml-2">{filteredData.length} Reg.</span>
+          <div className="data-panel lg:col-span-12 flex flex-col justify-between gap-7 p-6 md:p-7 xl:flex-row">
+            <div>
+              <p className="section-label text-brand">Despesas consolidadas</p>
+              <p className="mt-4 text-sm font-medium text-muted-foreground">
+                Total do período <span className="ml-2 font-semibold text-brand">{filteredData.length} registros</span>
               </p>
-              <h2 className="hero-metric text-dark mt-2">{formatCompact(kpis.total)}</h2>
+              <h2 className="hero-metric mt-2 text-dark">{formatCompact(kpis.total)}</h2>
             </div>
-            <div className="flex flex-wrap md:flex-nowrap gap-4 w-full xl:w-auto">
-              <div className="bg-bgBase p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-gray-500 uppercase">Emissão</p>
-                <p className="text-2xl font-black mt-1">{formatCompact(kpis.emissao)}</p>
+            <div className="grid w-full grid-cols-1 divide-y divide-line border-t border-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:border-t-0 xl:max-w-xl">
+              <div className="metric-cell px-0 pt-4 sm:pt-3">
+                <p className="section-label">Emissão</p>
+                <p className="mt-2 text-2xl font-semibold text-dark">{formatCompact(kpis.emissao)}</p>
               </div>
-              <div className="bg-bgBase p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-gray-500 uppercase">A Confirmar</p>
-                <p className="text-2xl font-black mt-1">{formatCompact(kpis.aConfirmar)}</p>
+              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+                <p className="section-label text-brand">A confirmar</p>
+                <p className="mt-2 text-2xl font-semibold text-brand">{formatCompact(kpis.aConfirmar)}</p>
               </div>
-              <div className="bg-dark text-white p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-brand uppercase">Pago</p>
-                <p className="text-2xl font-black mt-1 text-brand">{formatCompact(kpis.pago)}</p>
+              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+                <p className="section-label text-positive">Pago</p>
+                <p className="mt-2 text-2xl font-semibold text-positive">{formatCompact(kpis.pago)}</p>
               </div>
             </div>
           </div>
 
           {/* Chart: Timeline */}
-          <div className="lg:col-span-8 bg-white block-border p-8 shadow-hard flex flex-col">
+          <div className="data-panel lg:col-span-8 flex flex-col p-6 md:p-7">
             <div className="flex justify-between items-end mb-8">
               <h3 className="text-lg font-black uppercase">
                 Evolução {chartMode === 'daily' ? 'Diária' : 'Mensal'}
@@ -321,8 +319,8 @@ export default function Despesas() {
           </div>
 
           {/* Charts: Right column */}
-          <div className="lg:col-span-4 flex flex-col gap-8">
-            <div className="bg-white block-border p-6 shadow-hard flex-1">
+          <div className="lg:col-span-4 flex flex-col gap-5">
+            <div className="data-panel flex-1 p-6">
               <h3 className="text-sm font-black uppercase mb-4">Por Categoria</h3>
               <DonutChart
                 data={categoriasData}
@@ -331,7 +329,7 @@ export default function Despesas() {
                 height={160}
               />
             </div>
-            <div className="bg-white block-border p-6 shadow-hard flex-1">
+            <div className="data-panel flex-1 p-6">
               <h3 className="text-sm font-black uppercase mb-4">Top Fornecedores</h3>
               <DonutChart
                 data={fornecedoresData}
@@ -343,7 +341,7 @@ export default function Despesas() {
           </div>
 
           {/* Table */}
-          <div className="lg:col-span-12 bg-white block-border p-8 shadow-hard">
+          <div className="data-panel lg:col-span-12 p-6 md:p-7">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
               <h3 className="text-lg font-black uppercase">Detalhamento</h3>
               <div className="flex gap-3">

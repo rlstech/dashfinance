@@ -18,7 +18,7 @@ function clampFim(
   }
   const span = (fim.ano - inicio.ano) * 12 + (fim.mes - inicio.mes) + 1
   if (span > 24) {
-    let total = inicio.ano * 12 + (inicio.mes - 1) + 23
+    const total = inicio.ano * 12 + (inicio.mes - 1) + 23
     return { ano: Math.floor(total / 12), mes: (total % 12) + 1 }
   }
   return fim

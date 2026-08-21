@@ -31,11 +31,11 @@ export function DonutChart({ data, height = 250, centerLabel, centerValue }: Don
             </Pie>
             <Tooltip
               contentStyle={{
-                backgroundColor: '#0F172A',
-                border: '2px solid #0F172A',
+                backgroundColor: 'hsl(var(--popover))',
+                border: '1px solid hsl(var(--border))',
                 borderRadius: 0,
                 fontSize: 12,
-                color: '#F8FAFC',
+                color: 'hsl(var(--popover-foreground))',
               }}
               formatter={(value: number) => [formatCurrency(value)]}
             />

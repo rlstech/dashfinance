@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import { startTransition, useMemo, useEffect, useState } from 'react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { FileText, Sheet } from 'lucide-react'
 import { exportPivotPDF, exportPivotXLSX, exportExtratoPDF, exportExtratoXLSX, type ExtratoRowExport } from '@/lib/exportPivot'
@@ -9,18 +9,6 @@ import { DataTable } from '@/components/tables/DataTable'
 import { useAP, useReceitas, useSaldoBanco, useSaldoConfig } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
 import { formatCurrency, formatCompact, parseDate, compareDates } from '@/lib/formatters'
-import { EMPRESA_COLORS } from '@/types'
-
-interface DiaData {
-  data: string
-  entradas: number
-  saidas: number
-  saldo_dia: number
-  acumulado: number
-  saldo_banco: number | null
-  saldo_anterior: number | null
-}
-
 interface ExtratoRow {
   id: string
   data: string
@@ -308,15 +296,7 @@ export default function FluxoCaixa() {
       })
     })
     return result
-  }, [apData, recData, saldoData, filters, saldoConfigs, diasData])
-
-  const extratoTotals = useMemo(() => {
-    return extratoData.reduce((acc, row) => {
-      if (row.tipo === 'Entrada') acc.entrada += row.entrada ?? 0
-      if (row.tipo === 'Saída') acc.saida += row.saida ?? 0
-      return acc
-    }, { entrada: 0, saida: 0 })
-  }, [extratoData])
+  }, [apData, recData, saldoData, filters, diasData])
 
   const [searchTags, setSearchTags] = useState<string[]>([])
   const addTag = (tag: string) => {
@@ -357,7 +337,7 @@ export default function FluxoCaixa() {
   useEffect(() => {
     if (!filters.dtInicio || !filters.dtFim) return
     const days = (new Date(filters.dtFim).getTime() - new Date(filters.dtInicio).getTime()) / 86_400_000
-    setChartMode(days > 30 ? 'mensal' : 'diario')
+    startTransition(() => setChartMode(days > 30 ? 'mensal' : 'diario'))
   }, [filters.dtInicio, filters.dtFim])
 
   const chartData = useMemo(() =>
@@ -383,11 +363,10 @@ export default function FluxoCaixa() {
   }, [diasData])
 
   const necessidadeAporte = useMemo(() => {
-    let acumAnterior = 0
     return diasData.map((d, i) => {
-      const disponivel = i === 0 ? Math.max(d.saldo_banco ?? 0, 0) : Math.max(acumAnterior, 0)
+      const saldoAnterior = i === 0 ? 0 : diasData[i - 1].acumulado
+      const disponivel = i === 0 ? Math.max(d.saldo_banco ?? 0, 0) : Math.max(saldoAnterior, 0)
       const necessidade = d.saidas - d.entradas - disponivel
-      acumAnterior = d.acumulado
       return necessidade > 0 ? -necessidade : null
     })
   }, [diasData])
@@ -442,7 +421,7 @@ export default function FluxoCaixa() {
   const { obrasData, totalRecebimento, obrasSaidaData, totalSaidas: totalSaidasObra } = useMemo(() => {
     const CHART_COLORS = ['#2ea043', '#1f6feb', '#d29922', '#8957e5', '#f85149', '#373e47', '#005cc5', '#e36209']
     const formatTopN = (arr: [string, number][], n = 5) => {
-      let result = arr.slice(0, n)
+      const result = arr.slice(0, n)
       const others = arr.slice(n).reduce((acc, curr) => acc + curr[1], 0)
       if (others > 0) result.push(['Outros', others])
       return result.map(([name, value], i) => ({ name: name || 'N/A', value, color: CHART_COLORS[i % CHART_COLORS.length] }))
@@ -521,9 +500,9 @@ export default function FluxoCaixa() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full">
+      <div className="flex h-full min-h-0">
         <FilterSidebar showVis />
-        <div className="p-8 overflow-auto flex-1 space-y-8">
+        <div className="min-w-0 flex-1 space-y-6 overflow-auto p-5 md:p-7">
           <div className="h-44 bg-white block-border animate-pulse" />
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 h-80 bg-white block-border animate-pulse" />
@@ -536,45 +515,43 @@ export default function FluxoCaixa() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       <FilterSidebar showVis />
 
-      <div className="p-8 overflow-auto flex-1">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="min-w-0 flex-1 overflow-auto p-5 md:p-7">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
 
           {/* Hero KPI */}
-          <div className="lg:col-span-12 relative p-8 block-border shadow-hard bg-white flex flex-col xl:flex-row justify-between items-start xl:items-end gap-8">
-            <div className="absolute top-0 left-0 bg-brand text-dark text-xs font-black uppercase px-3 py-1 tracking-widest">
-              Fluxo de Caixa
-            </div>
-            <div className="mt-4">
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide">
-                Saldo do Período <span className={`ml-2 ${kpis.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{kpis.diasPositivos} dias positivos</span>
+          <div className="data-panel lg:col-span-12 flex flex-col justify-between gap-7 p-6 md:p-7 xl:flex-row">
+            <div>
+              <p className="section-label text-brand">Fluxo de caixa</p>
+              <p className="mt-4 text-sm font-medium text-muted-foreground">
+                Saldo do período <span className={`ml-2 font-semibold ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>{kpis.diasPositivos} dias positivos</span>
               </p>
-              <h2 className={`hero-metric mt-2 ${kpis.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <h2 className={`hero-metric mt-2 ${kpis.saldo >= 0 ? 'text-positive' : 'text-negative'}`}>
                 {formatCompact(kpis.saldo)}
               </h2>
             </div>
-            <div className="flex flex-wrap md:flex-nowrap gap-4 w-full xl:w-auto">
-              <div className="bg-bgBase p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-gray-500 uppercase">Total Entradas</p>
-                <p className="text-2xl font-black mt-1 text-emerald-600">{formatCompact(kpis.totalEntradas)}</p>
+            <div className="grid w-full grid-cols-1 divide-y divide-line border-t border-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:border-t-0 xl:max-w-xl">
+              <div className="metric-cell px-0 pt-4 sm:pt-3">
+                <p className="section-label text-positive">Total entradas</p>
+                <p className="mt-2 text-2xl font-semibold text-positive">{formatCompact(kpis.totalEntradas)}</p>
               </div>
-              <div className="bg-bgBase p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-gray-500 uppercase">Total Saídas</p>
-                <p className="text-2xl font-black mt-1 text-red-600">{formatCompact(kpis.totalSaidas)}</p>
+              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+                <p className="section-label text-negative">Total saídas</p>
+                <p className="mt-2 text-2xl font-semibold text-negative">{formatCompact(kpis.totalSaidas)}</p>
               </div>
-              <div className="bg-dark text-white p-4 block-border flex-1 xl:w-44">
-                <p className="text-xs font-bold text-brand uppercase">Dias Positivos</p>
-                <p className="text-2xl font-black mt-1 text-brand">
-                  {kpis.diasPositivos} <span className="text-sm font-bold text-white/60">/ {kpis.totalDias}</span>
+              <div className="metric-cell px-0 pt-4 sm:pl-5 sm:pt-3">
+                <p className="section-label text-brand">Dias positivos</p>
+                <p className="mt-2 text-2xl font-semibold text-brand">
+                  {kpis.diasPositivos} <span className="text-sm font-medium text-muted-foreground">/ {kpis.totalDias}</span>
                 </p>
               </div>
             </div>
           </div>
 
           {/* Chart: CashFlow */}
-          <div className="lg:col-span-8 bg-white block-border p-8 shadow-hard flex flex-col">
+          <div className="data-panel lg:col-span-8 flex flex-col p-6 md:p-7">
             <div className="flex justify-between items-end mb-8">
               <h3 className="text-lg font-black uppercase">
                 Fluxo de Caixa {chartMode === 'diario' ? 'Diário' : 'Mensal'}
@@ -600,7 +577,7 @@ export default function FluxoCaixa() {
           </div>
 
           {/* Chart: Donut por Obra */}
-          <div className="lg:col-span-4 bg-white block-border p-8 shadow-hard flex flex-col">
+          <div className="data-panel lg:col-span-4 flex flex-col p-6 md:p-7">
             <div className="flex justify-between items-end mb-8">
               <h3 className="text-lg font-black uppercase">
                 {donutMode === 'entradas' ? 'Entradas' : 'Saídas'} por Obra
@@ -631,7 +608,7 @@ export default function FluxoCaixa() {
           </div>
 
           {/* Extrato */}
-          <div className="lg:col-span-12 bg-white block-border p-8 shadow-hard">
+          <div className="data-panel lg:col-span-12 p-6 md:p-7">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
               <h3 className="text-lg font-black uppercase">Extrato de Movimentação Financeira</h3>
               <div className="flex gap-3">
@@ -666,7 +643,7 @@ export default function FluxoCaixa() {
           </div>
 
           {/* Pivot Table */}
-          <div className="lg:col-span-12 bg-white block-border p-8 shadow-hard">
+          <div className="data-panel lg:col-span-12 p-6 md:p-7">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
               <h3 className="text-lg font-black uppercase">Fluxo de Caixa por Dia</h3>
               <div className="flex gap-3">

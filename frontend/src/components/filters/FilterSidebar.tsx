@@ -1,10 +1,8 @@
-import { NavLink } from 'react-router-dom'
 import { useFilterStore } from '@/hooks/useFilters'
 import { useFilterTree } from '@/hooks/useFinanceiro'
-import { useAuthStore } from '@/hooks/useAuth'
 import { MultiSelect } from './MultiSelect'
 import { DateRangeSelector } from './DateRangeSelector'
-import { RotateCcw, X } from 'lucide-react'
+import { Filter, RotateCcw, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface FilterSidebarProps {
@@ -13,26 +11,11 @@ interface FilterSidebarProps {
   showVis?: boolean
 }
 
-const navItems = [
-  { to: '/receitas', label: 'Receitas' },
-  { to: '/despesas', label: 'Despesas' },
-  { to: '/fluxo', label: 'Fluxo de Caixa' },
-  { to: '/fluxo-obras', label: 'Fluxo Obras' },
-  { to: '/config', label: 'Configurações' },
-]
-
 export function FilterSidebar({ showOrigem, showStatus, showVis }: FilterSidebarProps) {
   const filters = useFilterStore()
   const sidebarOpen = useFilterStore((s) => s.sidebarOpen)
   const toggleSidebar = useFilterStore((s) => s.toggleSidebar)
   const { data: tree } = useFilterTree()
-  const { user } = useAuthStore()
-  const handleNavClick = () => {
-    if (window.innerWidth < 1024) {
-      toggleSidebar()
-    }
-  }
-
   const empresas = tree?.empresas ?? []
 
   const obras = filters.empresas.length > 0
@@ -58,66 +41,48 @@ export function FilterSidebar({ showOrigem, showStatus, showVis }: FilterSidebar
   const origens = ['Emissao', 'A Confirmar', 'Pago']
   const statusList = ['A Receber', 'Recebida']
   const visList = ['realizado', 'projetado']
+  const activeFilterCount = filters.empresas.length + filters.obras.length + filters.bancos.length + filters.contas.length
+    + filters.origens.length + filters.status_list.length + (filters.vis[0] === 'todos' ? 0 : filters.vis.length)
 
   const sidebarContent = (
     <>
-      <div className="p-4 block-border-b flex items-center justify-between">
-        <h2 className="text-xs font-black uppercase tracking-widest text-dark">Filtros</h2>
+      <div className="flex items-center justify-between border-b border-line px-4 py-4">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-brand" />
+          <div>
+            <h2 className="text-sm font-semibold text-dark">Escopo</h2>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">Filtros desta visualização</p>
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={filters.resetFilters}
             title="Limpar todos os filtros"
-            className="p-1.5 text-muted-foreground hover:text-dark hover:bg-bgBase transition-colors"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white hover:text-dark"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
           <button
-            className="p-1.5 text-muted-foreground hover:text-dark hover:bg-bgBase transition-colors lg:hidden"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white hover:text-dark lg:hidden"
             onClick={toggleSidebar}
             title="Fechar"
+            aria-label="Fechar filtros"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
-      <div className="lg:hidden p-4 block-border-b space-y-2">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={handleNavClick}
-            className={({ isActive }) =>
-              cn(
-                'block text-sm font-black uppercase tracking-widest py-2 px-3 transition-colors',
-                isActive
-                  ? 'bg-dark text-white'
-                  : 'text-muted-foreground hover:bg-bgBase hover:text-dark'
-              )
-            }
-          >
-            {item.label}
-          </NavLink>
-        ))}
-        {user?.is_admin && (
-          <NavLink
-            to="/admin"
-            onClick={handleNavClick}
-            className={({ isActive }) =>
-              cn(
-                'block text-sm font-black uppercase tracking-widest py-2 px-3 transition-colors',
-                isActive
-                  ? 'bg-dark text-white'
-                  : 'text-muted-foreground hover:bg-bgBase hover:text-dark'
-              )
-            }
-          >
-            Admin
-          </NavLink>
-        )}
+      <div className="border-b border-line px-4 py-3">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em]">
+          <span className="text-muted-foreground">Filtros ativos</span>
+          <span className={cn('rounded-full px-2 py-0.5', activeFilterCount > 0 ? 'bg-brand/15 text-brand' : 'bg-white text-muted-foreground')}>
+            {activeFilterCount}
+          </span>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-5">
+      <div className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden p-4">
         <DateRangeSelector
           startDate={filters.dtInicio}
           endDate={filters.dtFim}
@@ -164,7 +129,7 @@ export function FilterSidebar({ showOrigem, showStatus, showVis }: FilterSidebar
 
       <aside
         className={cn(
-          'flex flex-col bg-white block-border-r transition-transform duration-300 ease-in-out',
+          'filter-surface flex flex-col border-r border-line transition-transform duration-200 ease-out',
           'lg:relative lg:translate-x-0 lg:w-[280px] lg:min-w-[280px] lg:h-full',
           'fixed inset-y-0 left-0 z-50 w-[280px] h-full lg:static',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'

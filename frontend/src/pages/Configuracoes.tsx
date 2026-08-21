@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { startTransition, useEffect, useState, useCallback } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useStatus, useFilterTree, useSaldoConfig, useSaveSaldos } from '@/hooks/useFinanceiro'
@@ -28,7 +28,7 @@ export default function Configuracoes() {
     for (const s of savedSaldos) {
       map[`${s.empresa}|${buildKey(s.banco, s.conta)}`] = s
     }
-    setLocalSaldos(map)
+    startTransition(() => setLocalSaldos(map))
   }, [savedSaldos])
 
   const getConfig = useCallback(
@@ -81,17 +81,18 @@ export default function Configuracoes() {
   const isLoading = saldosLoading || treeLoading
 
   return (
-    <div className="flex h-full">
-      <div className="p-8 overflow-auto w-full">
-        <div className="max-w-4xl mx-auto space-y-8">
+    <div className="flex h-full min-h-0">
+      <div className="w-full overflow-auto p-5 md:p-7">
+        <div className="mx-auto max-w-5xl space-y-6">
 
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black uppercase tracking-tight">Configurações</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.03em]">Configurações</h1>
             {isAdmin && (
               <button
+                type="button"
                 onClick={handleSave}
                 disabled={saveSaldos.isPending}
-                className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50"
+                className="rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark disabled:opacity-50"
               >
                 {saveSaldos.isPending ? 'Salvando...' : 'Salvar Alterações'}
               </button>
@@ -99,14 +100,14 @@ export default function Configuracoes() {
           </div>
 
           {saveSaldos.isSuccess && (
-            <p className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-2">
+            <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-positive">
               Configurações salvas com sucesso.
             </p>
           )}
 
           {/* Status do Sistema */}
-          <div className="bg-white block-border shadow-hard p-8">
-            <h2 className="text-sm font-black uppercase tracking-widest mb-6">Status do Sistema</h2>
+          <div className="data-panel p-6 md:p-7">
+            <h2 className="mb-6 text-sm font-semibold text-dark">Status do sistema</h2>
             <div className="space-y-4 text-sm">
               <div className="flex justify-between items-center border-b border-grid pb-3">
                 <span className="font-bold uppercase text-xs text-muted-foreground">Última sincronização</span>
@@ -132,9 +133,9 @@ export default function Configuracoes() {
           </div>
 
           {/* Saldo Bancário Manual */}
-          <div className="bg-white block-border shadow-hard p-8">
-            <h2 className="text-sm font-black uppercase tracking-widest mb-2">Saldo Bancário Manual</h2>
-            <p className="text-xs text-muted-foreground font-medium mb-6">
+          <div className="data-panel p-6 md:p-7">
+            <h2 className="mb-2 text-sm font-semibold text-dark">Saldo bancário manual</h2>
+            <p className="mb-6 text-xs font-medium text-muted-foreground">
               Quando ativado por empresa, o saldo informado substitui o do banco de dados no card
               <strong className="text-dark"> Fluxo de Caixa por Dia</strong>.
               {!isAdmin && <span className="text-muted-foreground"> (somente leitura)</span>}
@@ -156,16 +157,16 @@ export default function Configuracoes() {
 
                   return (
                     <div key={empresa} className="space-y-3 border-b border-grid pb-6 last:border-0 last:pb-0">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
                           <span
-                            className="inline-block w-3 h-3 border border-dark"
+                            className="inline-block h-3 w-3 rounded-full border border-white shadow-sm"
                             style={{ backgroundColor: EMPRESA_COLORS[empresa] }}
                           />
-                          <span className="text-sm font-black uppercase">{empresa}</span>
+                          <span className="text-sm font-semibold text-dark">{empresa}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-bold uppercase text-muted-foreground">
+                          <span className="hidden text-xs font-medium text-muted-foreground sm:inline">
                             {enabled ? 'Saldo manual ativo' : 'Usando banco de dados'}
                           </span>
                           <Switch
@@ -177,18 +178,18 @@ export default function Configuracoes() {
                       </div>
 
                       {enabled && (
-                        <div className="ml-5 block-border overflow-hidden">
+                        <div className="ml-5 overflow-hidden rounded-lg border border-line">
                           {bancoCombos.length === 0 ? (
-                            <p className="text-xs text-muted-foreground font-bold uppercase p-3">
+                              <p className="p-3 text-xs font-medium text-muted-foreground">
                               Nenhuma conta disponível para esta empresa.
                             </p>
                           ) : (
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="border-b-2 border-dark bg-bgBase">
-                                  <th className="text-left px-3 py-2 font-black uppercase text-dark">Banco</th>
-                                  <th className="text-left px-3 py-2 font-black uppercase text-dark">Conta</th>
-                                  <th className="text-right px-3 py-2 font-black uppercase text-dark">Saldo (R$)</th>
+                                <tr className="border-b border-line bg-bgBase">
+                                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Banco</th>
+                                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Conta</th>
+                                  <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Saldo (R$)</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -211,7 +212,7 @@ export default function Configuracoes() {
                                             updateSaldo(empresa, banco, conta, val)
                                             e.target.value = val !== 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''
                                           }}
-                                          className="w-full text-right bg-white border-2 border-dark px-2 py-1 text-xs font-bold focus:outline-none focus:border-brand tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
+                                          className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-right text-xs font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
                                         />
                                       </td>
                                     </tr>
@@ -219,9 +220,9 @@ export default function Configuracoes() {
                                 })}
                               </tbody>
                               <tfoot>
-                                <tr className="bg-bgBase border-t-2 border-dark">
-                                  <td colSpan={2} className="px-3 py-2 font-black uppercase text-xs">Total</td>
-                                  <td className="px-3 py-2 text-right font-black tabular-nums">
+                                <tr className="border-t border-line bg-bgBase">
+                                  <td colSpan={2} className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em]">Total</td>
+                                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
                                     {formatCurrency(
                                       bancoCombos.reduce((s, { banco, conta }) => s + getConfig(empresa, banco, conta).saldo, 0)
                                     )}
@@ -240,10 +241,10 @@ export default function Configuracoes() {
           </div>
 
           {/* Sobre */}
-          <div className="bg-white block-border shadow-hard p-8">
-            <h2 className="text-sm font-black uppercase tracking-widest mb-4">Sobre</h2>
-            <p className="text-sm text-muted-foreground font-medium">DashFinance v2.0 — Dashboard financeiro Premium</p>
-            <p className="text-sm text-muted-foreground font-medium mt-1">FastAPI + React + TypeScript</p>
+          <div className="data-panel p-6 md:p-7">
+            <h2 className="mb-4 text-sm font-semibold text-dark">Sobre</h2>
+            <p className="text-sm font-medium text-muted-foreground">DashFinance v2.0 · Dashboard financeiro</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">FastAPI + React + TypeScript</p>
           </div>
 
         </div>

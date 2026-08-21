@@ -1,41 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-
 @layer base {
   :root {
-    --background: 210 40% 96%;
-    --foreground: 222 47% 11%;
+    --background: 204 24% 95%;
+    --foreground: 212 29% 18%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 212 29% 18%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 25 96% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 92%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 92%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 92%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    --popover-foreground: 212 29% 18%;
+    --primary: 31 91% 48%;
+    --primary-foreground: 212 29% 18%;
+    --secondary: 204 22% 90%;
+    --secondary-foreground: 212 29% 18%;
+    --muted: 204 22% 91%;
+    --muted-foreground: 211 15% 42%;
+    --accent: 205 78% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 72% 42%;
     --destructive-foreground: 0 0% 100%;
-    --border: 213 31% 91%;
-    --input: 213 31% 91%;
-    --ring: 25 96% 53%;
-    --radius: 0rem;
+    --border: 205 20% 83%;
+    --input: 205 20% 83%;
+    --ring: 31 91% 48%;
+    --radius: 0.75rem;
+    --brand: 31 91% 48%;
+    --positive: 164 88% 26%;
+    --negative: 4 72% 42%;
+    --info: 197 56% 34%;
+    --border-strong: 207 18% 68%;
+    --sidebar: 212 29% 18%;
+    --sidebar-muted: 211 24% 25%;
 
-    --chart-receita: #F97316;
-    --chart-despesa: #ef4444;
-    --chart-saldo: #0F172A;
-    --chart-previsto: #94a3b8;
-    --chart-a-confirmar: #0F172A;
-    --chart-emissao: #CBD5E1;
-    --chart-pago: #F97316;
-    --chart-recebida: #065f46;
-    --chart-a-receber: #f59e0b;
+    --chart-receita: #d97706;
+    --chart-despesa: #b42318;
+    --chart-saldo: #1f3b4d;
+    --chart-previsto: #8aa0ad;
+    --chart-a-confirmar: #1f3b4d;
+    --chart-emissao: #c5d2d9;
+    --chart-pago: #d97706;
+    --chart-recebida: #087f68;
+    --chart-a-receber: #c26a09;
+  }
+
+  .theme-dark {
+    --background: 222 47% 7%;
+    --foreground: 214 100% 96%;
+    --card: 222 43% 10%;
+    --card-foreground: 214 100% 96%;
+    --popover: 222 40% 13%;
+    --popover-foreground: 214 100% 96%;
+    --primary: 214 100% 62%;
+    --primary-foreground: 222 47% 7%;
+    --secondary: 221 32% 16%;
+    --secondary-foreground: 214 100% 96%;
+    --muted: 221 31% 15%;
+    --muted-foreground: 215 25% 65%;
+    --accent: 188 90% 52%;
+    --accent-foreground: 222 47% 7%;
+    --destructive: 0 78% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 31% 19%;
+    --input: 220 31% 19%;
+    --ring: 214 100% 62%;
+    --brand: 214 100% 62%;
+    --positive: 161 77% 51%;
+    --negative: 0 84% 68%;
+    --info: 188 90% 52%;
+    --border-strong: 219 33% 30%;
+    --sidebar: 222 51% 6%;
+    --sidebar-muted: 221 39% 13%;
+
+    --chart-receita: #5b8cff;
+    --chart-despesa: #fb7185;
+    --chart-saldo: #45d7f3;
+    --chart-previsto: #8494b5;
+    --chart-a-confirmar: #5b8cff;
+    --chart-emissao: #7c5cff;
+    --chart-pago: #47d7ac;
+    --chart-recebida: #47d7ac;
+    --chart-a-receber: #9b7bff;
   }
 
   * {
@@ -45,32 +91,123 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     margin: 0;
+    min-width: 320px;
+    line-height: 1.45;
+  }
+
+  .theme-dark [class~='bg-white'] {
+    background-color: hsl(var(--card)) !important;
+  }
+
+  .theme-dark input,
+  .theme-dark select,
+  .theme-dark textarea {
+    color: hsl(var(--foreground));
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
   }
 }
 
 @layer components {
   .block-border {
-    border: 2px solid #0F172A;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
   }
 
   .block-border-b {
-    border-bottom: 2px solid #0F172A;
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .block-border-r {
-    border-right: 2px solid #0F172A;
+    border-right: 1px solid hsl(var(--border));
   }
 
   .shadow-hard {
-    box-shadow: 8px 8px 0px 0px rgba(15, 23, 42, 1);
+    box-shadow: 0 14px 30px rgba(28, 46, 56, 0.08);
   }
 
   .hero-metric {
-    font-size: clamp(2rem, 3vw, 3.5rem);
-    letter-spacing: -0.05em;
-    font-weight: 900;
+    font-size: 2.5rem;
+    letter-spacing: -0.04em;
+    font-weight: 700;
     line-height: 1;
+  }
+
+  .data-panel {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    box-shadow: 0 10px 24px rgba(2, 8, 23, 0.12);
+  }
+
+  .section-label {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .metric-cell {
+    border-left: 1px solid hsl(var(--border));
+    padding: 0.75rem 1rem;
+  }
+
+  .metric-cell:first-child {
+    border-left: 0;
+  }
+
+  .app-shell {
+    background: hsl(var(--background));
+  }
+
+  .filter-surface {
+    background: hsl(var(--secondary));
+  }
+}
+
+@layer utilities {
+  .border-2.border-dark {
+    border-width: 1px;
+    border-color: hsl(var(--border-strong));
+  }
+
+  .border-b-2.border-dark {
+    border-bottom-width: 1px;
+    border-bottom-color: hsl(var(--border-strong));
+  }
+
+  .border-t-2.border-dark {
+    border-top-width: 1px;
+    border-top-color: hsl(var(--border-strong));
+  }
+
+  .border-2.border-grid {
+    border-width: 1px;
+  }
+
+  .border-b-2.border-grid {
+    border-bottom-width: 1px;
   }
 }

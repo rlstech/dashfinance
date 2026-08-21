@@ -11,31 +11,31 @@ export function TimelineChart({ data, bars, height = 300 }: TimelineChartProps) 
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#CBD5E1" />
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis
           dataKey="label"
-          tick={{ fill: '#94A3B8', fontSize: 11 }}
+          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: '#94A3B8', fontSize: 11 }}
+          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v) => formatCompact(v)}
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: '#0F172A',
-            border: '2px solid #0F172A',
-            borderRadius: 0,
+            backgroundColor: 'hsl(var(--popover))',
+            border: '1px solid hsl(var(--border))',
+            borderRadius: 8,
             fontSize: 12,
-            color: '#F8FAFC',
+            color: 'hsl(var(--popover-foreground))',
           }}
           formatter={(value: number) => [formatCurrency(value)]}
         />
         <Legend
-          wrapperStyle={{ fontSize: 12, color: '#64748B' }}
+          wrapperStyle={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}
         />
         {bars.map((bar) => (
           <Bar
@@ -44,7 +44,7 @@ export function TimelineChart({ data, bars, height = 300 }: TimelineChartProps) 
             name={bar.name}
             fill={bar.color}
             stackId="a"
-            radius={[0, 0, 0, 0]}
+            radius={[3, 3, 0, 0]}
           />
         ))}
       </BarChart>

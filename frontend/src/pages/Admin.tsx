@@ -104,27 +104,28 @@ export default function Admin() {
   const isPending = createUser.isPending || updateUser.isPending
 
   return (
-    <div className="flex h-full">
-      <div className="p-8 overflow-auto w-full">
-        <div className="max-w-4xl mx-auto space-y-8">
+    <div className="flex h-full min-h-0">
+      <div className="w-full overflow-auto p-5 md:p-7">
+        <div className="mx-auto max-w-5xl space-y-6">
 
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black uppercase tracking-tight flex items-center gap-3">
-              <ShieldCheck className="h-6 w-6 text-brand" />
+            <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em]">
+              <ShieldCheck className="h-6 w-6 text-brand" aria-hidden="true" />
               Administração
             </h1>
             <button
+              type="button"
               onClick={openNew}
-              className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors flex items-center gap-2"
+              className="flex items-center gap-2 rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark"
             >
               <UserPlus className="h-3.5 w-3.5" />
               Novo Usuário
             </button>
           </div>
 
-          <div className="bg-white block-border shadow-hard">
-            <div className="p-5 block-border-b">
-              <h2 className="text-sm font-black uppercase tracking-widest">Usuários do Sistema</h2>
+          <div className="data-panel overflow-hidden">
+            <div className="border-b border-line p-5">
+              <h2 className="text-sm font-semibold text-dark">Usuários do sistema</h2>
             </div>
 
             {isLoading ? (
@@ -132,18 +133,18 @@ export default function Admin() {
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b-2 border-dark bg-bgBase">
-                    <th className="text-left px-4 py-3 font-black uppercase">Nome</th>
-                    <th className="text-left px-4 py-3 font-black uppercase hidden md:table-cell">E-mail</th>
-                    <th className="text-left px-4 py-3 font-black uppercase hidden lg:table-cell">Empresas</th>
-                    <th className="text-center px-4 py-3 font-black uppercase">Admin</th>
-                    <th className="text-center px-4 py-3 font-black uppercase">Ativo</th>
+                   <tr className="border-b border-line bg-bgBase">
+                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Nome</th>
+                     <th className="hidden px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground md:table-cell">E-mail</th>
+                     <th className="hidden px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:table-cell">Empresas</th>
+                     <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Admin</th>
+                     <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ativo</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {users?.map((u) => (
-                    <tr key={u.id} className="border-b border-grid last:border-0 hover:bg-bgBase transition-colors">
+                     <tr key={u.id} className="border-b border-grid transition-colors last:border-0 hover:bg-bgBase">
                       <td className="px-4 py-3 font-bold">{u.name}</td>
                       <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{u.email}</td>
                       <td className="px-4 py-3 hidden lg:table-cell">
@@ -204,64 +205,67 @@ export default function Admin() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white block-border shadow-hard w-full max-w-md">
-            <div className="p-5 block-border-b flex items-center justify-between">
-              <h2 className="text-sm font-black uppercase tracking-widest">
+          <div className="w-full max-w-md overflow-hidden rounded-xl border border-line bg-white shadow-panel">
+            <div className="flex items-center justify-between border-b border-line p-5">
+              <h2 className="text-sm font-semibold text-dark">
                 {editingId ? 'Editar Usuário' : 'Novo Usuário'}
               </h2>
-              <button onClick={closeModal} className="text-muted-foreground hover:text-dark text-lg font-bold leading-none">×</button>
+              <button type="button" onClick={closeModal} aria-label="Fechar" className="rounded-md p-1 text-lg leading-none text-muted-foreground transition-colors hover:bg-bgBase hover:text-dark">x</button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Nome</label>
+              <div className="space-y-2">
+                <label htmlFor="admin-name" className="text-xs font-semibold text-dark">Nome</label>
                 <input
+                  id="admin-name"
                   type="text"
                   required
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className="w-full border-2 border-dark px-3 py-2 text-sm font-medium focus:outline-none focus:border-brand"
+                  className="h-10 w-full rounded-md border border-line px-3 text-sm font-medium outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                 />
               </div>
 
               {!editingId && (
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">E-mail</label>
+                <div className="space-y-2">
+                  <label htmlFor="admin-email" className="text-xs font-semibold text-dark">E-mail</label>
                   <input
+                    id="admin-email"
                     type="email"
                     required
                     value={form.email}
                     onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                    className="w-full border-2 border-dark px-3 py-2 text-sm font-medium focus:outline-none focus:border-brand"
+                    className="h-10 w-full rounded-md border border-line px-3 text-sm font-medium outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                   />
                 </div>
               )}
 
-              <div className="space-y-1">
-                <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+              <div className="space-y-2">
+                <label htmlFor="admin-password" className="text-xs font-semibold text-dark">
                   Senha {editingId && <span className="normal-case font-medium">(deixe vazio para não alterar)</span>}
                 </label>
                 <input
+                  id="admin-password"
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  className="w-full border-2 border-dark px-3 py-2 text-sm font-medium focus:outline-none focus:border-brand"
-                  placeholder="••••••••"
+                  className="h-10 w-full rounded-md border border-line px-3 text-sm font-medium outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  placeholder="Senha"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Empresas</label>
+                <span className="text-xs font-semibold text-dark">Empresas</span>
                 <div className="flex flex-wrap gap-2">
                   {ALL_EMPRESAS.map((emp) => (
                     <button
                       key={emp}
                       type="button"
                       onClick={() => toggleEmpresa(emp)}
-                      className={`px-2 py-1 text-[10px] font-black uppercase border-2 transition-colors ${
+                      className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold uppercase transition-colors ${
                         form.empresas.includes(emp)
                           ? 'border-dark bg-dark text-white'
-                          : 'border-dark text-dark hover:bg-bgBase'
+                          : 'border-line text-dark hover:border-brand hover:bg-bgBase'
                       }`}
                     >
                       {emp}
@@ -278,7 +282,7 @@ export default function Admin() {
                     onChange={(e) => setForm((f) => ({ ...f, is_admin: e.target.checked }))}
                     className="w-4 h-4 border-2 border-dark accent-brand"
                   />
-                  <span className="text-xs font-black uppercase tracking-widest">Administrador</span>
+                  <span className="text-xs font-semibold text-dark">Administrador</span>
                 </label>
                 {editingId && (
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -288,27 +292,27 @@ export default function Admin() {
                       onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                       className="w-4 h-4 border-2 border-dark accent-brand"
                     />
-                    <span className="text-xs font-black uppercase tracking-widest">Ativo</span>
+                    <span className="text-xs font-semibold text-dark">Ativo</span>
                   </label>
                 )}
               </div>
 
               {formError && (
-                <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-3 py-2">{formError}</p>
+                <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-negative">{formError}</p>
               )}
 
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="flex-1 bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50"
+                  className="flex-1 rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark disabled:opacity-50"
                 >
                   {isPending ? 'Salvando...' : editingId ? 'Salvar' : 'Criar'}
                 </button>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 border-2 border-dark text-xs font-black uppercase tracking-widest hover:bg-bgBase transition-colors"
+                  className="rounded-md border border-line px-4 py-2 text-xs font-semibold text-dark transition-colors hover:border-brand hover:bg-bgBase"
                 >
                   Cancelar
                 </button>

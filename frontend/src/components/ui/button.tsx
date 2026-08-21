@@ -11,11 +11,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        'inline-flex items-center justify-center text-xs font-black uppercase tracking-widest transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+        'inline-flex items-center justify-center rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 disabled:pointer-events-none disabled:opacity-50',
         {
           'bg-dark text-white hover:bg-brand hover:text-dark': variant === 'default',
           'text-muted-foreground hover:bg-muted hover:text-foreground': variant === 'ghost',
-          'border-2 border-dark bg-transparent text-dark hover:bg-bgBase': variant === 'outline',
+          'border border-line bg-transparent text-dark hover:border-brand hover:bg-bgBase': variant === 'outline',
           'bg-destructive text-white hover:bg-red-700': variant === 'destructive',
         },
         {

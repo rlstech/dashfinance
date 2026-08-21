@@ -18,8 +18,8 @@ import {
   useFluxoObrasTodas,
   useFluxoRealCache,
   useGruposObras,
-  useGruposTotaisReais,
   useGruposTotaisPrevistos,
+  useGruposTotaisReais,
   useObraLogs,
   useSaveObraPlanejamento,
   useSavePeriodoGrupo,
@@ -35,7 +35,7 @@ import { exportFluxoObrasPDF } from '@/lib/exportFluxoObras'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, GrupoTotaisPrevistos, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoConta, LancamentoDetalhe, LancamentoSuprimido, RegraParTransferencia } from '@/types'
+import type { FluxoMesRow, FluxoPlanejamentoResponse, GrupoObras, GrupoShareItem, GrupoTotaisReais, PlanejamentoLogEntry, SaveObraPlanejamentoIn, Periodo, CustoFinanceiroResponse, CustoFinanceiroCategoria, LancamentoConta, LancamentoDetalhe, LancamentoSuprimido, RegraParTransferencia } from '@/types'
 import { PeriodoMesesSelector } from '@/components/filters/PeriodoMesesSelector'
 
 const CATEGORIA_NAO_CLASSIFICADA = 0
@@ -48,17 +48,6 @@ const CUR_MONTH = new Date().getMonth() + 1
 // Mês atual em diante (usado pela projeção do Fluxo Acumulado Real)
 function isMesProjetado(ano: number, mes: number): boolean {
   return ano > CUR_YEAR || (ano === CUR_YEAR && mes >= CUR_MONTH)
-}
-
-function periodoSlots(p: Periodo): Array<{ ano: number; mes: number }> {
-  const slots: Array<{ ano: number; mes: number }> = []
-  let { anoInicio: ano, mesInicio: mes } = p
-  while (ano < p.anoFim || (ano === p.anoFim && mes <= p.mesFim)) {
-    slots.push({ ano, mes })
-    mes++
-    if (mes > 12) { mes = 1; ano++ }
-  }
-  return slots
 }
 
 // ── Input de valor monetário com separador de milhar em tempo real ──────────
@@ -768,11 +757,11 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
   const saldoReal = totaisReais ? totaisReais.receita_realizada - totaisReais.custo_real : null
 
   return (
-    <div className="bg-white block-border shadow-hard flex flex-col">
+    <div className="data-panel flex flex-col">
       {/* Header do card */}
-      <div className="bg-dark text-white px-4 py-3">
+      <div className="bg-sidebar px-4 py-3 text-white">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-black uppercase tracking-widest truncate flex-1">{grupo.nome}</p>
+          <p className="truncate flex-1 text-sm font-semibold">{grupo.nome}</p>
           {!grupo.is_owner && (
             <Share2 className="h-3 w-3 text-white/50 flex-shrink-0" />
           )}
@@ -792,8 +781,8 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
           <div className="space-y-1.5">
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5 text-xs items-baseline">
               <span></span>
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Prev.</span>
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Real</span>
+              <span className="section-label text-right">Prev.</span>
+              <span className="section-label text-right">Real</span>
               <span className="text-muted-foreground">Custo</span>
               <span className="font-bold tabular-nums text-right">{formatCurrency(totais.custoPrev)}</span>
               <span className="font-bold tabular-nums text-right text-dark/70">
@@ -805,7 +794,7 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
                 {totaisReais ? formatCurrency(totaisReais.receita_realizada) : '—'}
               </span>
             </div>
-            <div className="border-t-2 border-grid pt-2 mt-2 space-y-1">
+            <div className="mt-2 space-y-1 border-t border-grid pt-2">
               <div className="flex justify-between text-xs">
                 <span className="font-black text-dark">Saldo Prev.</span>
                 <span className={cn('font-black tabular-nums', totais.saldo >= 0 ? 'text-teal-600' : 'text-red-500')}>
@@ -839,10 +828,10 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
       </div>
 
       {/* Ações */}
-      <div className="px-4 py-3 border-t-2 border-grid flex items-center gap-3">
+      <div className="flex items-center gap-3 border-t border-grid px-4 py-3">
         <button
           onClick={onAbrir}
-          className="flex-1 text-xs font-black uppercase tracking-widest bg-dark text-white py-2 hover:bg-brand hover:text-dark transition-colors"
+          className="flex-1 rounded-md bg-dark py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark"
         >
           Abrir
         </button>
@@ -1283,7 +1272,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
     : 'border-amber-400/60 text-amber-300 hover:bg-amber-400 hover:text-dark'
 
   return (
-    <div className="bg-white block-border shadow-hard">
+    <div className="data-panel">
       <div className={headerCls}>
         <button
           type="button"
@@ -1497,16 +1486,14 @@ function DemaisObrasSection({ data, breakdown, projetar }: DemaisObrasSectionPro
   const saldoReal      = totalRecReal - totalCustoReal
 
   const mesProjetado = meses.map((m) => projetar && isMesProjetado(m.ano, m.mes))
-  let accReal = 0
-  const acumuladoReal = meses.map((m, i) => {
-    if (mesProjetado[i]) {
-      const receitaMes = m.receita_realizada > 0 ? m.receita_realizada : m.receita_prevista
-      accReal += receitaMes - Math.max(m.custo_real, m.custo_previsto)
-    } else {
-      accReal += m.receita_realizada - m.custo_real
-    }
-    return accReal
-  })
+  const acumuladoReal = meses.reduce<number[]>((acc, m, i) => {
+    const previous = acc[i - 1] ?? 0
+    const delta = mesProjetado[i]
+      ? (m.receita_realizada > 0 ? m.receita_realizada : m.receita_prevista) - Math.max(m.custo_real, m.custo_previsto)
+      : m.receita_realizada - m.custo_real
+    acc.push(previous + delta)
+    return acc
+  }, [])
 
   function buildTooltip(mesIdx: number, field: 'custo_real' | 'receita_realizada'): string | undefined {
     const contribuintes = breakdown
@@ -1525,7 +1512,7 @@ function DemaisObrasSection({ data, breakdown, projetar }: DemaisObrasSectionPro
   ]
 
   return (
-    <div className="bg-white block-border shadow-hard">
+    <div className="data-panel">
       <button
         type="button"
         className="w-full flex items-center justify-between px-4 py-3 bg-brand text-dark hover:bg-brand/90 transition-colors"
@@ -1699,7 +1686,7 @@ function ConsolidadoGrupo({ obras, obrasGreedy, projetar }: ConsolidadoGrupoProp
   ]
 
   return (
-    <div className="bg-white block-border shadow-hard">
+    <div className="data-panel">
       <button
         type="button"
         className="w-full flex items-center justify-between px-4 py-3 bg-dark text-white hover:bg-dark/90 transition-colors"
@@ -1832,7 +1819,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
   const fluxoComOperacional = fluxo_liquido + totalSaldoOperacional
 
   return (
-    <div className="bg-white block-border overflow-hidden">
+    <div className="data-panel overflow-hidden">
       <button
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-brand/5 transition-colors"
         onClick={() => setCollapsed((v) => !v)}
@@ -2600,8 +2587,6 @@ export default function FluxoObras() {
     document.title = 'Fluxo de Obras | DashFinance'
   }, [])
 
-  const currentUser = useAuthStore((s) => s.user)
-
   const [periodo, setPeriodo] = useState<Periodo>({
     anoInicio: currentYear, mesInicio: 1,
     anoFim: currentYear, mesFim: 12,
@@ -2625,7 +2610,6 @@ export default function FluxoObras() {
   const { data: totaisPrevMap } = useGruposTotaisPrevistos(periodo)
   const fluxoRealCache = useFluxoRealCache(grupoAtivoId, periodo)
   const atualizarFluxoReal = useAtualizarFluxoReal()
-  const saveObraPlanejamento = useSaveObraPlanejamento()
   const savePeriodo = useSavePeriodoGrupo()
   const deleteGrupo = useDeleteGrupo()
 
@@ -2881,43 +2865,46 @@ export default function FluxoObras() {
 
   if (view === 'grupos') {
     return (
-      <div className="flex h-full">
-        <div className="p-6 md:p-8 overflow-auto flex-1">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight text-dark">
-              Fluxo de Caixa Gerencial de Obras
-            </h1>
+      <div className="flex h-full min-h-0">
+        <div className="min-w-0 flex-1 overflow-auto p-5 md:p-7">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="section-label text-brand">Obras</p>
+              <h1 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-dark md:text-2xl">
+                Fluxo de caixa gerencial
+              </h1>
+            </div>
             <div className="flex items-center gap-3">
               {seletor_periodo}
               <button
                 onClick={() => setModalState('novo')}
-                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors"
+                className="rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark"
               >
-                + Novo Grupo
+                Novo grupo
               </button>
             </div>
           </div>
 
           {loadingGrupos ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-52 w-full" />
               ))}
             </div>
           ) : grupos.length === 0 ? (
-            <div className="bg-white block-border shadow-hard p-12 text-center">
-              <p className="text-sm font-bold text-muted-foreground mb-4">
+            <div className="data-panel p-12 text-center">
+              <p className="mb-4 text-sm font-medium text-muted-foreground">
                 Nenhum grupo criado ainda.
               </p>
               <button
                 onClick={() => setModalState('novo')}
-                className="text-xs font-black uppercase tracking-widest bg-dark text-white px-6 py-2 hover:bg-brand hover:text-dark transition-colors"
+                className="rounded-md bg-dark px-6 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark"
               >
-                + Criar primeiro grupo
+                Criar primeiro grupo
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {grupos.map((g) => (
                 <GrupoCard
                   key={g.id}
@@ -2943,19 +2930,19 @@ export default function FluxoObras() {
   // ── Tela: detalhe do grupo ────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full">
-      <div className="p-6 md:p-8 overflow-auto flex-1">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+    <div className="flex h-full min-h-0">
+      <div className="min-w-0 flex-1 overflow-auto p-5 md:p-7">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <button
               onClick={handleVoltar}
-              className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 hover:bg-brand hover:border-brand hover:text-dark transition-colors flex-shrink-0"
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-3 py-2 text-xs font-semibold text-dark transition-colors hover:border-brand hover:bg-brand hover:text-dark"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Voltar
             </button>
             <div>
-              <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight text-dark">
+              <h1 className="text-xl font-semibold tracking-[-0.03em] text-dark md:text-2xl">
                 {grupoAtivo?.nome}
               </h1>
               {grupoAtivo?.descricao && (
@@ -2968,7 +2955,7 @@ export default function FluxoObras() {
             {grupoAtivo?.can_edit === true && (
               <button
                 onClick={() => grupoAtivo && setModalState(grupoAtivo)}
-                className="text-xs font-black uppercase tracking-widest border-2 border-dark px-3 py-2 bg-white hover:bg-brand hover:border-brand hover:text-dark transition-colors"
+                className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-dark transition-colors hover:border-brand hover:bg-brand hover:text-dark"
               >
                 Editar Grupo
               </button>
@@ -2977,7 +2964,7 @@ export default function FluxoObras() {
             <button
               onClick={handleExportarPDF}
               disabled={!obrasParaRender.length}
-              className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="flex items-center gap-2 rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark disabled:opacity-50"
             >
               <FileDown className="h-3.5 w-3.5" />
               Exportar PDF
@@ -2992,14 +2979,14 @@ export default function FluxoObras() {
             ))}
           </div>
         ) : obrasDoGrupo.length === 0 ? (
-          <div className="bg-white block-border shadow-hard p-12 text-center text-muted-foreground text-sm font-bold">
+          <div className="data-panel p-12 text-center text-sm font-medium text-muted-foreground">
             Nenhuma obra neste grupo. Clique em <strong>Editar Grupo</strong> para adicionar obras.
           </div>
         ) : (
           <div className="space-y-4">
             {/* Painel: Dados Reais */}
-            <div className="bg-white block-border p-4 space-y-3">
-              <p className="text-xs font-black uppercase tracking-widest text-dark">Dados Reais (UAU)</p>
+            <div className="data-panel space-y-3 p-5">
+              <p className="section-label text-dark">Dados reais (UAU)</p>
               <div className="flex flex-wrap gap-6">
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Despesas</p>
@@ -3066,7 +3053,7 @@ export default function FluxoObras() {
                     })
                   }}
                   disabled={loadingReal || !grupoAtivoId || grupoAtivo?.can_edit !== true}
-                  className="text-xs font-black uppercase tracking-widest bg-dark text-white px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark disabled:opacity-50"
                 >
                   <RefreshCw className={cn('h-3 w-3', loadingReal && 'animate-spin')} />
                   {loadingReal ? 'Carregando…' : meta ? 'Atualizar Dados Reais' : 'Carregar Dados Reais'}
@@ -3094,7 +3081,7 @@ export default function FluxoObras() {
             </div>
 
             {/* Painel: Projeção do Fluxo Acumulado Real */}
-            <div className="bg-white block-border p-4 space-y-2">
+            <div className="data-panel space-y-2 p-5">
               <label className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-dark cursor-pointer select-none">
                 <input
                   type="checkbox"

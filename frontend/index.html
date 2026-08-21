@@ -1,12 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DashFinance</title>
+    <script>
+      (() => {
+        const preference = localStorage.getItem('dashfinance-theme') || 'system'
+        const isDark = preference === 'dark' || (preference === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.toggle('theme-dark', isDark)
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+      })()
+    </script>
   </head>
   <body>
+    <!--
+      THESIS: DashFinance is a financial operations room, not a marketing dashboard; every screen should make scope, state, and next action legible.
+      OWN-WORLD: cool mineral surfaces, graphite navigation, signal amber actions, hairline data rules, calm density, and tabular figures.
+      STORY: the operator selects a scope, reads the financial position, follows exceptions, and drills into the records behind each number.
+      FIRST VIEWPORT: a persistent operations rail, a compact context header, and the current page's scope-aware summary before charts or tables.
+      FORM: Sala de Controle Financeiro, an operating workspace with a persistent rail and contextual filter dock.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

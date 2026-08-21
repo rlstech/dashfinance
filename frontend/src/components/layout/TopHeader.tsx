@@ -1,114 +1,120 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { RefreshCw, Menu, LogOut, ShieldCheck } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Filter, LogOut, Menu, RefreshCw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSync, useStatus } from '@/hooks/useFinanceiro'
 import { useFilterStore } from '@/hooks/useFilters'
 import { useAuthStore } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
+import { ThemeToggle } from './ThemeToggle'
 
-const navItems = [
-  { to: '/receitas', label: 'Receitas' },
-  { to: '/despesas', label: 'Despesas' },
-  { to: '/fluxo', label: 'Fluxo de Caixa' },
-  { to: '/fluxo-obras', label: 'Fluxo Obras' },
-  { to: '/config', label: 'Configurações' },
-]
+interface TopHeaderProps {
+  onOpenNav: () => void
+}
 
-export function TopHeader() {
-  const { data: status } = useStatus()
-  const sync = useSync()
-  const toggleSidebar = useFilterStore((s) => s.toggleSidebar)
-  const resetFilters = useFilterStore((s) => s.resetFilters)
-  const { user, logout } = useAuthStore()
+const pageMeta: Record<string, { title: string; section: string; supportsFilters?: boolean }> = {
+  '/receitas': { title: 'Receitas', section: 'Operação', supportsFilters: true },
+  '/despesas': { title: 'Despesas', section: 'Operação', supportsFilters: true },
+  '/fluxo': { title: 'Fluxo de Caixa', section: 'Operação', supportsFilters: true },
+  '/fluxo-obras': { title: 'Fluxo Obras', section: 'Obras' },
+  '/config': { title: 'Configurações', section: 'Sistema' },
+  '/admin': { title: 'Administração', section: 'Acesso' },
+}
+
+function formatDateRange(start: string, end: string) {
+  if (!start || !end) return 'Período completo'
+  const fmt = (value: string) => value.split('-').reverse().join('/')
+  return `${fmt(start)} a ${fmt(end)}`
+}
+
+export function TopHeader({ onOpenNav }: TopHeaderProps) {
+  const location = useLocation()
   const navigate = useNavigate()
+  const sync = useSync()
+  const { data: status } = useStatus()
+  const filters = useFilterStore()
+  const toggleFilters = useFilterStore((s) => s.toggleSidebar)
+  const { user, logout } = useAuthStore()
   const queryClient = useQueryClient()
+  const meta = pageMeta[location.pathname] ?? { title: 'DashFinance', section: 'Sistema' }
 
   function handleLogout() {
     logout()
     queryClient.clear()
-    resetFilters()
+    filters.resetFilters()
     navigate('/login', { replace: true })
   }
 
-  return (
-    <header className="px-6 pt-4 pb-0 block-border-b bg-white flex flex-col md:flex-row justify-between items-start md:items-end sticky top-0 z-30 gap-2 md:gap-0">
-      <div className="flex items-end gap-10">
-        <div className="flex items-center gap-3 mb-3">
-          <button
-            className="md:hidden p-1 border-2 border-dark text-dark hover:bg-brand hover:text-white transition-colors"
-            onClick={toggleSidebar}
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-          <h1 className="text-2xl font-black tracking-tighter text-dark uppercase">
-            Dashfinance<span className="text-brand">_</span>
-          </h1>
-        </div>
+  const scope = filters.empresas.length > 0 ? filters.empresas.join(', ') : 'Todas as empresas'
 
-        <nav className="hidden md:flex gap-6 text-xs">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'font-black uppercase tracking-widest pb-3 transition-colors border-b-4',
-                  isActive
-                    ? 'text-dark border-brand'
-                    : 'text-muted-foreground border-transparent hover:text-dark'
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-          {user?.is_admin && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                cn(
-                  'font-black uppercase tracking-widest pb-3 transition-colors border-b-4',
-                  isActive
-                    ? 'text-dark border-brand'
-                    : 'text-muted-foreground border-transparent hover:text-dark'
-                )
-              }
-            >
-              Admin
-            </NavLink>
-          )}
-        </nav>
+  return (
+    <header className="sticky top-0 z-30 flex min-h-[72px] items-center justify-between gap-4 border-b border-line bg-card/95 px-4 backdrop-blur md:px-7">
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          aria-label="Abrir navegação"
+          className="rounded-md border border-line p-2 text-muted-foreground transition-colors hover:border-brand hover:text-dark md:hidden"
+          onClick={onOpenNav}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
+            <span>{meta.section}</span>
+            <span className="text-line">/</span>
+            <span className="text-brand">Escopo ativo</span>
+          </div>
+          <h1 className="truncate text-[16px] font-semibold tracking-[-0.02em] text-dark md:text-[18px]">{meta.title}</h1>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4 mb-3">
-        {status?.last_sync && (
-          <span className="text-xs text-muted-foreground hidden lg:inline-block font-medium">
-            Atualizado {status.last_sync}
-          </span>
+      <div className="flex shrink-0 items-center gap-2 md:gap-4">
+        {meta.supportsFilters && (
+          <button
+            type="button"
+            aria-label="Abrir filtros"
+            className="rounded-md border border-line p-2 text-muted-foreground transition-colors hover:border-brand hover:text-dark lg:hidden"
+            onClick={toggleFilters}
+          >
+            <Filter className="h-4 w-4" />
+          </button>
         )}
+
+        <div className="hidden min-w-0 text-right lg:block">
+          <p className="max-w-[260px] truncate text-xs font-semibold text-dark" title={scope}>{scope}</p>
+          <p className="text-[10px] text-muted-foreground">{formatDateRange(filters.dtInicio, filters.dtFim)}</p>
+        </div>
+
+        <div className="hidden items-center gap-2 text-[10px] text-muted-foreground xl:flex">
+          <span className={cn('h-2 w-2 rounded-full', status?.last_sync ? 'bg-positive' : 'bg-muted-foreground/40')} />
+          <span>{status?.last_sync ? `Atualizado ${status.last_sync}` : 'Sem sincronização'}</span>
+        </div>
+
+        <ThemeToggle />
 
         {user?.is_admin && (
           <button
+            type="button"
             onClick={() => sync.mutate()}
             disabled={sync.isPending}
-            className="bg-dark text-white text-xs font-black uppercase tracking-widest px-4 py-2 hover:bg-brand hover:text-dark transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="hidden items-center gap-2 rounded-md bg-dark px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark disabled:opacity-50 sm:flex"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', sync.isPending && 'animate-spin')} />
-            <span className="hidden sm:inline">Sincronizar</span>
+            <span>{sync.isPending ? 'Sincronizando' : 'Sincronizar'}</span>
           </button>
         )}
 
-        <div className="flex items-center gap-2 border-2 border-dark px-3 py-1.5">
-          {user?.is_admin && <ShieldCheck className="h-3.5 w-3.5 text-brand flex-shrink-0" />}
-          <span className="text-xs font-black uppercase tracking-widest truncate max-w-[120px]" title={user?.name}>
+        <div className="flex items-center gap-2 border-l border-line pl-2 md:pl-4">
+          <span className="hidden max-w-[120px] truncate text-xs font-semibold text-dark sm:inline" title={user?.name}>
             {user?.name ?? ''}
           </span>
           <button
+            type="button"
             onClick={handleLogout}
             title="Sair"
-            className="text-muted-foreground hover:text-brand transition-colors ml-1"
+            aria-label="Sair"
+            className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-red-50 hover:text-negative"
           >
-            <LogOut className="h-3.5 w-3.5" />
+            <LogOut className="h-4 w-4" />
           </button>
         </div>
       </div>

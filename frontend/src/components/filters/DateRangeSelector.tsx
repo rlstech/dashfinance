@@ -74,18 +74,19 @@ export function DateRangeSelector({
   ]
 
   return (
-    <div className="flex flex-col gap-3 block-border-b pb-5">
-      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-black">Período</span>
+    <div className="flex flex-col gap-3 border-b border-line pb-5">
+      <span className="section-label">Período</span>
 
       <div className="grid grid-cols-2 gap-1">
         {presets.map(({ key, label }) => (
           <button
             key={key}
+            type="button"
             onClick={() => handlePreset(key)}
-            className={`h-7 text-[10px] font-black uppercase tracking-wide px-1 border-2 transition-colors ${
+            className={`h-8 rounded-md border px-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
               activePreset === key
-                ? 'bg-dark text-white border-dark'
-                : 'bg-white text-dark border-dark hover:bg-bgBase'
+                ? 'border-dark bg-dark text-white'
+                : 'border-line bg-white text-dark hover:border-brand hover:bg-white'
             }`}
           >
             {label}
@@ -99,7 +100,7 @@ export function DateRangeSelector({
           <input
             type="date"
             style={{ colorScheme: 'light' }}
-            className="w-full h-8 px-2 border-2 border-dark bg-white text-xs text-dark font-bold focus:outline-none focus:border-brand"
+            className="h-9 w-full rounded-md border border-line bg-white px-2 text-xs font-medium text-dark focus:outline-none focus:ring-2 focus:ring-brand/25"
             value={startDate}
             onChange={(e) => onStartDateChange(e.target.value)}
           />
@@ -109,7 +110,7 @@ export function DateRangeSelector({
           <input
             type="date"
             style={{ colorScheme: 'light' }}
-            className="w-full h-8 px-2 border-2 border-dark bg-white text-xs text-dark font-bold focus:outline-none focus:border-brand"
+            className="h-9 w-full rounded-md border border-line bg-white px-2 text-xs font-medium text-dark focus:outline-none focus:ring-2 focus:ring-brand/25"
             value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
           />
