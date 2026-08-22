@@ -12,6 +12,7 @@ interface TopHeaderProps {
 }
 
 const pageMeta: Record<string, { title: string; section: string }> = {
+  '/': { title: 'Dashboard', section: 'Visão geral' },
   '/receitas': { title: 'Receitas', section: 'Operação' },
   '/despesas': { title: 'Despesas', section: 'Operação' },
   '/fluxo': { title: 'Fluxo de Caixa', section: 'Operação' },

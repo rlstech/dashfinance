@@ -1,5 +1,6 @@
-import { NavLink } from 'react-router-dom'
-import { Activity, ArrowDownLeft, ArrowUpRight, Building2, Settings2, ShieldCheck, X } from 'lucide-react'
+import { Link, NavLink } from 'react-router-dom'
+import type { LucideIcon } from 'lucide-react'
+import { Activity, ArrowDownLeft, ArrowUpRight, Building2, LayoutDashboard, Settings2, ShieldCheck, X } from 'lucide-react'
 import { useAuthStore } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 
@@ -8,7 +9,20 @@ interface AppSidebarProps {
   onClose: () => void
 }
 
-const groups = [
+interface NavItem {
+  to: string
+  label: string
+  icon: LucideIcon
+  /** Casa exata da rota — necessário para '/', que é prefixo de todas as demais. */
+  end?: boolean
+}
+
+const groups: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'Visão geral',
+    // `end` é obrigatório aqui: sem ele o NavLink de '/' fica ativo em todas as rotas.
+    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true }],
+  },
   {
     label: 'Operação',
     items: [
@@ -59,9 +73,13 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
           <div>
-            <div className="text-[17px] font-bold tracking-[-0.03em]">
+            <Link
+              to="/"
+              onClick={onClose}
+              className="block rounded-sm text-[17px] font-bold tracking-[-0.03em] transition-colors hover:text-brand"
+            >
               Dashfinance<span className="text-brand">.</span>
-            </div>
+            </Link>
             <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
               Sala de controle
             </p>
@@ -89,6 +107,7 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
                     <NavLink
                       key={item.to}
                       to={item.to}
+                      end={item.end}
                       className={({ isActive }) => cn(
                         'group flex items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-medium transition-colors',
                         isActive

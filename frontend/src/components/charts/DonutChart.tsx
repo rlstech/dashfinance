@@ -6,9 +6,11 @@ interface DonutChartProps {
   height?: number
   centerLabel?: string
   centerValue?: string
+  /** Quando informado, fatias e legenda viram alvos de drill-down. */
+  onSliceClick?: (name: string) => void
 }
 
-export function DonutChart({ data, height = 250, centerLabel, centerValue }: DonutChartProps) {
+export function DonutChart({ data, height = 250, centerLabel, centerValue, onSliceClick }: DonutChartProps) {
   const total = data.reduce((s, d) => s + d.value, 0)
 
   return (
@@ -24,6 +26,8 @@ export function DonutChart({ data, height = 250, centerLabel, centerValue }: Don
               outerRadius="85%"
               paddingAngle={2}
               dataKey="value"
+              onClick={onSliceClick ? (_, index) => onSliceClick(data[index]?.name) : undefined}
+              style={onSliceClick ? { cursor: 'pointer' } : undefined}
             >
               {data.map((entry, i) => (
                 <Cell key={i} fill={entry.color} stroke="transparent" />
@@ -49,15 +53,31 @@ export function DonutChart({ data, height = 250, centerLabel, centerValue }: Don
         )}
       </div>
       <div className="space-y-1.5 mt-3">
-        {data.map((d, i) => (
-          <div key={i} className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <div className="h-2.5 w-2.5" style={{ backgroundColor: d.color }} />
-              <span className="text-muted-foreground font-medium truncate max-w-[120px]">{d.name}</span>
+        {data.map((d, i) => {
+          const conteudo = (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5" style={{ backgroundColor: d.color }} />
+                <span className="text-muted-foreground font-medium truncate max-w-[120px]">{d.name}</span>
+              </div>
+              <span className="font-black tabular-nums">{formatCompact(d.value)}</span>
+            </>
+          )
+          return onSliceClick ? (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onSliceClick(d.name)}
+              className="flex w-full items-center justify-between text-xs rounded-sm px-1 -mx-1 py-0.5 transition-colors hover:bg-secondary"
+            >
+              {conteudo}
+            </button>
+          ) : (
+            <div key={i} className="flex items-center justify-between text-xs">
+              {conteudo}
             </div>
-            <span className="font-black tabular-nums">{formatCompact(d.value)}</span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
