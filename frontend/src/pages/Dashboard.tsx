@@ -21,7 +21,7 @@ import {
   type ScopeFilters,
 } from '@/lib/finance'
 import { cn } from '@/lib/utils'
-import { EMPRESA_COLORS, type Periodo } from '@/types'
+import { EMPRESA_COLORS } from '@/types'
 
 type FluxoModo = 'realizado' | 'todos'
 type DonutModo = 'entradas' | 'saidas'
@@ -169,13 +169,6 @@ export default function Dashboard() {
   }, [ap, receitas, donutModo])
 
   const donutTotal = useMemo(() => donutData.reduce((s, d) => s + d.value, 0), [donutData])
-
-  const periodo = useMemo<Periodo>(() => {
-    const anoAtual = new Date().getFullYear()
-    const [ai, mi] = filters.dtInicio ? filters.dtInicio.split('-').map(Number) : [anoAtual, 1]
-    const [af, mf] = filters.dtFim ? filters.dtFim.split('-').map(Number) : [anoAtual, 12]
-    return { anoInicio: ai, mesInicio: mi, anoFim: af, mesFim: mf }
-  }, [filters.dtInicio, filters.dtFim])
 
   const dataReferencia = hoje.toLocaleDateString('pt-BR')
   const registrosNoEscopo = ap.length + receitas.length
@@ -388,7 +381,7 @@ export default function Dashboard() {
 
         {/* Obras */}
         <div className="lg:col-span-12">
-          <ObrasResumoPanel periodo={periodo} />
+          <ObrasResumoPanel />
         </div>
       </div>
     </FilteredPage>

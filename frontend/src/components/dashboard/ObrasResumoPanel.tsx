@@ -4,11 +4,6 @@ import { Building2, ChevronRight } from 'lucide-react'
 import { useGruposObras, useGruposTotaisPrevistos, useGruposTotaisReais } from '@/hooks/useFinanceiro'
 import { formatCompact, formatCurrency, formatDateTime } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
-import type { Periodo } from '@/types'
-
-interface ObrasResumoPanelProps {
-  periodo: Periodo
-}
 
 interface LinhaGrupo {
   id: number
@@ -60,14 +55,13 @@ function Barra({
 /**
  * Previsto × real por grupo de obras.
  *
- * `grupos-totais-previstos` aceita o intervalo completo, mas `grupos-totais-reais` aceita
- * **apenas um ano** e devolve somente os grupos que já tiveram snapshot persistido — a
- * ausência da chave significa "nunca foi calculado", não zero.
+ * Cada grupo usa o próprio período configurado nele (periodo_padrao) — não o filtro de
+ * período da tela; a ausência de um grupo em `reais` significa "nunca foi calculado", não zero.
  */
-export function ObrasResumoPanel({ periodo }: ObrasResumoPanelProps) {
+export function ObrasResumoPanel() {
   const { data: grupos, isLoading: gruposLoading } = useGruposObras()
-  const { data: previstos } = useGruposTotaisPrevistos(periodo)
-  const { data: reais } = useGruposTotaisReais(periodo.anoFim)
+  const { data: previstos } = useGruposTotaisPrevistos()
+  const { data: reais } = useGruposTotaisReais()
 
   const linhas = useMemo<LinhaGrupo[]>(() => {
     if (!grupos) return []
@@ -90,7 +84,6 @@ export function ObrasResumoPanel({ periodo }: ObrasResumoPanelProps) {
   }, [grupos, previstos, reais])
 
   const visiveis = linhas.slice(0, MAX_LINHAS)
-  const periodoCruzaAnos = periodo.anoInicio !== periodo.anoFim
 
   return (
     <div className="data-panel p-6 md:p-7">
@@ -162,12 +155,6 @@ export function ObrasResumoPanel({ periodo }: ObrasResumoPanelProps) {
         {linhas.length > MAX_LINHAS && (
           <p className="text-[11px] text-muted-foreground">
             Mostrando {MAX_LINHAS} de {linhas.length} grupos, por maior custo previsto.
-          </p>
-        )}
-        {periodoCruzaAnos && (
-          <p className="text-[11px] text-muted-foreground">
-            O previsto cobre {periodo.anoInicio}–{periodo.anoFim}; o realizado é um snapshot anual e
-            cobre apenas {periodo.anoFim}.
           </p>
         )}
       </div>

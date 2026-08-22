@@ -1076,24 +1076,26 @@ async def get_obra_logs(grupo_id: int, obra_codigo: str) -> list[dict]:
 
 
 async def get_grupos_planejamento_totais(
-    grupo_ids: list[int], slots: list[tuple[int, int]],
+    periodos: dict[int, list[tuple[int, int]]],
 ) -> dict[int, dict]:
-    """Retorna {grupo_id: {custo_prev, receita_prev}} somado sobre os meses do período."""
-    if not grupo_ids or not slots:
+    """Retorna {grupo_id: {custo_prev, receita_prev}} somado sobre os meses do período de cada grupo."""
+    grupo_ids = list(periodos.keys())
+    if not grupo_ids:
         return {}
-    anos = list({s[0] for s in slots})
-    slotset = set(slots)
+    anos = list({ano for slots in periodos.values() for ano, _ in slots})
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT grupo_id, ano, mes, custo_previsto, receita_prevista "
             "FROM fluxo_planejamento WHERE grupo_id = ANY($1) AND ano = ANY($2)",
             grupo_ids, anos,
         )
+    slotset_by_grupo = {gid: set(slots) for gid, slots in periodos.items()}
     out: dict[int, dict] = {gid: {"custo_prev": 0.0, "receita_prev": 0.0} for gid in grupo_ids}
     for r in rows:
-        if (r["ano"], r["mes"]) in slotset:
-            out[r["grupo_id"]]["custo_prev"] += float(r["custo_previsto"])
-            out[r["grupo_id"]]["receita_prev"] += float(r["receita_prevista"])
+        gid = r["grupo_id"]
+        if gid in slotset_by_grupo and (r["ano"], r["mes"]) in slotset_by_grupo[gid]:
+            out[gid]["custo_prev"] += float(r["custo_previsto"])
+            out[gid]["receita_prev"] += float(r["receita_prevista"])
     return out
 
 
@@ -1164,39 +1166,46 @@ async def save_fluxo_real_cache(
 
 
 async def get_grupos_real_totais(
-    grupo_ids: list[int], ano: int,
+    periodos: dict[int, tuple[int, int, int, int]],
 ) -> dict[int, dict]:
-    """Retorna {grupo_id: {custo_real, receita_realizada, updated_at, origens, status_rec}}."""
-    if not grupo_ids:
+    """Retorna {grupo_id: {custo_real, receita_realizada, updated_at, origens, status_rec}},
+    somando o snapshot persistido de cada grupo sobre o próprio período (yi, mi, yf, mf)."""
+    if not periodos:
         return {}
-    async with _pool.acquire() as conn:
-        totais = await conn.fetch(
-            """SELECT grupo_id,
-                      COALESCE(SUM(custo_real), 0)        AS custo_real,
-                      COALESCE(SUM(receita_realizada), 0) AS receita_realizada
-               FROM fluxo_real_cache
-               WHERE grupo_id = ANY($1) AND ano = $2
-               GROUP BY grupo_id""",
-            grupo_ids, ano,
-        )
-        metas = await conn.fetch(
-            """SELECT grupo_id, updated_at, origens, status_rec
-               FROM fluxo_real_cache_meta
-               WHERE grupo_id = ANY($1) AND ano = $2""",
-            grupo_ids, ano,
-        )
-    tot_map = {r["grupo_id"]: r for r in totais}
     result: dict[int, dict] = {}
-    for m in metas:
-        gid = m["grupo_id"]
-        t = tot_map.get(gid)
-        result[gid] = {
-            "custo_real": float(t["custo_real"]) if t else 0.0,
-            "receita_realizada": float(t["receita_realizada"]) if t else 0.0,
-            "updated_at": m["updated_at"],
-            "origens": list(m["origens"]),
-            "status_rec": list(m["status_rec"]),
-        }
+    async with _pool.acquire() as conn:
+        for gid, (yi, mi, yf, mf) in periodos.items():
+            anos = list(range(yi, yf + 1))
+            metas = await conn.fetch(
+                """SELECT ano, updated_at, origens, status_rec
+                   FROM fluxo_real_cache_meta
+                   WHERE grupo_id = $1 AND ano = ANY($2)""",
+                gid, anos,
+            )
+            if not metas:
+                continue
+            custo_real = 0.0
+            receita_realizada = 0.0
+            for yr in anos:
+                yr_mi = mi if yr == yi else 1
+                yr_mf = mf if yr == yf else 12
+                totais = await conn.fetchrow(
+                    """SELECT COALESCE(SUM(custo_real), 0)        AS custo_real,
+                              COALESCE(SUM(receita_realizada), 0) AS receita_realizada
+                       FROM fluxo_real_cache
+                       WHERE grupo_id = $1 AND ano = $2 AND mes BETWEEN $3 AND $4""",
+                    gid, yr, yr_mi, yr_mf,
+                )
+                custo_real += float(totais["custo_real"])
+                receita_realizada += float(totais["receita_realizada"])
+            latest = max(metas, key=lambda m: m["updated_at"])
+            result[gid] = {
+                "custo_real": custo_real,
+                "receita_realizada": receita_realizada,
+                "updated_at": latest["updated_at"],
+                "origens": list(latest["origens"]),
+                "status_rec": list(latest["status_rec"]),
+            }
     return result
 
 

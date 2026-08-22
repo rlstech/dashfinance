@@ -66,6 +66,15 @@ def _resolve_periodo(
     return yr, 1, yr, 12
 
 
+def _grupo_periodo(grupo: dict) -> tuple[int, int, int, int]:
+    """Resolve o período de um grupo: o periodo_padrao salvo, ou o ano atual inteiro."""
+    p = grupo.get("periodo_padrao")
+    if p:
+        return p["ano_inicio"], p["mes_inicio"], p["ano_fim"], p["mes_fim"]
+    yr = datetime.now().year
+    return yr, 1, yr, 12
+
+
 @router.get("/todas", response_model=list[FluxoPlanejamentoResponse])
 async def get_todas(
     grupo_id: int,
@@ -127,19 +136,13 @@ async def get_todas(
 
 @router.get("/grupos-totais-previstos", response_model=dict[int, GrupoTotaisPrevistos])
 async def get_grupos_totais_previstos(
-    ano: int | None = None,
-    ano_inicio: int | None = None,
-    mes_inicio: int = 1,
-    ano_fim: int | None = None,
-    mes_fim: int = 12,
     user: UserOut = Depends(get_current_user),
 ):
-    """Totais de custo/receita previstos por grupo visível, para a galeria de cards."""
-    yi, mi, yf, mf = _resolve_periodo(ano, ano_inicio, mes_inicio, ano_fim, mes_fim)
-    slots = _periodo_slots(yi, mi, yf, mf)
+    """Totais de custo/receita previstos por grupo visível, cada um sobre o próprio período
+    (periodo_padrao do grupo), para a galeria de cards."""
     grupos = await pg.get_grupos(user.id, user.is_admin)
-    grupo_ids = [g["id"] for g in grupos]
-    totais = await pg.get_grupos_planejamento_totais(grupo_ids, slots)
+    periodos = {g["id"]: _periodo_slots(*_grupo_periodo(g)) for g in grupos}
+    totais = await pg.get_grupos_planejamento_totais(periodos)
     return {
         gid: GrupoTotaisPrevistos(custo_prev=t["custo_prev"], receita_prev=t["receita_prev"])
         for gid, t in totais.items()
@@ -407,13 +410,13 @@ async def atualizar_grupo_real(
 
 @router.get("/grupos-totais-reais", response_model=dict[int, GrupoTotaisReais])
 async def get_grupos_totais_reais(
-    ano: int,
     user: UserOut = Depends(get_current_user),
 ):
-    """Totais reais (sum) por grupo visível, para alimentar a galeria de cards."""
+    """Totais reais (sum) por grupo visível, cada um sobre o próprio período (periodo_padrao
+    do grupo), para alimentar a galeria de cards."""
     grupos = await pg.get_grupos(user.id, user.is_admin)
-    grupo_ids = [g["id"] for g in grupos]
-    totais = await pg.get_grupos_real_totais(grupo_ids, ano)
+    periodos = {g["id"]: _grupo_periodo(g) for g in grupos}
+    totais = await pg.get_grupos_real_totais(periodos)
     return {
         gid: GrupoTotaisReais(
             custo_real=t["custo_real"],

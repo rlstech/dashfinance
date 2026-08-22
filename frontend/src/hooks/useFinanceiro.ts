@@ -95,15 +95,10 @@ export function useFluxoObrasTodas(grupoId: number | null, periodo: Periodo) {
   })
 }
 
-export function useGruposTotaisPrevistos(periodo: Periodo) {
+export function useGruposTotaisPrevistos() {
   return useQuery<Record<string, GrupoTotaisPrevistos>>({
-    queryKey: ['grupos-totais-previstos', periodo],
-    queryFn: () => api.get('/fluxo-obras/grupos-totais-previstos', {
-      ano_inicio: periodo.anoInicio,
-      mes_inicio: periodo.mesInicio,
-      ano_fim: periodo.anoFim,
-      mes_fim: periodo.mesFim,
-    }),
+    queryKey: ['grupos-totais-previstos'],
+    queryFn: () => api.get('/fluxo-obras/grupos-totais-previstos'),
     staleTime: 1000 * 60 * 5,
   })
 }
@@ -193,7 +188,11 @@ export function useSavePeriodoGrupo() {
         ano_fim: periodo.anoFim,
         mes_fim: periodo.mesFim,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grupos-obras'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['grupos-obras'] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-previstos'] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais'] })
+    },
   })
 }
 
@@ -228,15 +227,15 @@ export function useAtualizarFluxoReal() {
       ),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['fluxo-real-cache', variables.grupoId, variables.periodo] })
-      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais', variables.periodo.anoInicio] })
+      queryClient.invalidateQueries({ queryKey: ['grupos-totais-reais'] })
     },
   })
 }
 
-export function useGruposTotaisReais(ano: number) {
+export function useGruposTotaisReais() {
   return useQuery<Record<string, GrupoTotaisReais>>({
-    queryKey: ['grupos-totais-reais', ano],
-    queryFn: () => api.get('/fluxo-obras/grupos-totais-reais', { ano }),
+    queryKey: ['grupos-totais-reais'],
+    queryFn: () => api.get('/fluxo-obras/grupos-totais-reais'),
     staleTime: 1000 * 60 * 5,
   })
 }

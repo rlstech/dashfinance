@@ -776,7 +776,16 @@ function GrupoCard({ grupo, totais, totaisReais, onAbrir, onEditar, onExcluir, d
 
       {/* Métricas */}
       <div className="px-4 py-3 flex-1">
-        <p className="text-xs text-muted-foreground mb-3">{grupo.obras.length} obra(s)</p>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">{grupo.obras.length} obra(s)</p>
+          {grupo.periodo_padrao && (
+            <p className="text-[10px] font-semibold text-muted-foreground">
+              {MESES[grupo.periodo_padrao.mes_inicio - 1]}/{grupo.periodo_padrao.ano_inicio}
+              {' – '}
+              {MESES[grupo.periodo_padrao.mes_fim - 1]}/{grupo.periodo_padrao.ano_fim}
+            </p>
+          )}
+        </div>
         {totais !== null ? (
           <div className="space-y-1.5">
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5 text-xs items-baseline">
@@ -2606,8 +2615,8 @@ export default function FluxoObras() {
   const { data: tree } = useFilterTree()
   const { data: todasObras, isLoading: loadingObras } = useFluxoObrasTodas(grupoAtivoId, periodo)
   const { data: grupos = [], isLoading: loadingGrupos } = useGruposObras()
-  const { data: totaisReaisMap } = useGruposTotaisReais(periodo.anoInicio)
-  const { data: totaisPrevMap } = useGruposTotaisPrevistos(periodo)
+  const { data: totaisReaisMap } = useGruposTotaisReais()
+  const { data: totaisPrevMap } = useGruposTotaisPrevistos()
   const fluxoRealCache = useFluxoRealCache(grupoAtivoId, periodo)
   const atualizarFluxoReal = useAtualizarFluxoReal()
   const savePeriodo = useSavePeriodoGrupo()
@@ -2875,7 +2884,6 @@ export default function FluxoObras() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              {seletor_periodo}
               <button
                 onClick={() => setModalState('novo')}
                 className="rounded-md bg-dark px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand hover:text-dark"
@@ -2960,7 +2968,6 @@ export default function FluxoObras() {
                 Editar Grupo
               </button>
             )}
-            {seletor_periodo}
             <button
               onClick={handleExportarPDF}
               disabled={!obrasParaRender.length}
@@ -2986,7 +2993,10 @@ export default function FluxoObras() {
           <div className="space-y-4">
             {/* Painel: Dados Reais */}
             <div className="data-panel space-y-3 p-5">
-              <p className="section-label text-dark">Dados reais (UAU)</p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="section-label text-dark">Dados reais (UAU)</p>
+                {seletor_periodo}
+              </div>
               <div className="flex flex-wrap gap-6">
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Despesas</p>
