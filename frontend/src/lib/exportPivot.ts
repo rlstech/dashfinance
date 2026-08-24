@@ -3,7 +3,7 @@ import * as XLSX from '@e965/xlsx'
 import { formatCurrency } from './formatters'
 import {
   createReport, drawMetaRow, drawKpiRow, drawFooter, drawCompactBand,
-  baseTableStyles, nowStamp, saveReport,
+  baseTableStyles, nowStamp, saveReport, buildReportFilename,
   INK, MUTED, POSITIVE, NEGATIVE, ZEBRA, MARGIN_X,
   type RGB,
 } from './pdfReport'
@@ -296,7 +296,7 @@ export function exportPivotXLSX(data: PivotExportData): void {
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Fluxo de Caixa')
-  XLSX.writeFile(wb, `fluxo_caixa_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`)
+  XLSX.writeFile(wb, `${buildReportFilename('fluxo_caixa', empresaLabel)}.xlsx`)
 }
 
 // ─── Extrato Bancário Export ─────────────────────────────────────────────────
@@ -463,5 +463,5 @@ export function exportExtratoXLSX(rows: ExtratoRowExport[], empresaLabel: string
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Extrato Movimentação Financeira')
-  XLSX.writeFile(wb, `extrato_movimentacao_financeira_${empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`)
+  XLSX.writeFile(wb, `${buildReportFilename('extrato_movimentacao_financeira', empresaLabel)}.xlsx`)
 }

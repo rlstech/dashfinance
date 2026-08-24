@@ -267,7 +267,26 @@ export function drawFooter(r: ReportHandle, label: string): void {
   }
 }
 
+/** Carimbo de data/hora seguro para nome de arquivo: DD-MM-AAAA_HHHMM. */
+function fileStamp(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}_${p(d.getHours())}H${p(d.getMinutes())}`
+}
+
+/**
+ * Monta o nome final de um relatório: junta as partes, sanitiza, coloca tudo
+ * em maiúsculas e acrescenta a data/hora de geração no final.
+ */
+export function buildReportFilename(...parts: string[]): string {
+  const base = parts
+    .filter(Boolean)
+    .map((p) => p.replace(/[^a-zA-Z0-9]/g, '_'))
+    .join('_')
+  return `${base.toUpperCase()}_${fileStamp()}`
+}
+
 /** Salva com a convenção de nome já usada pelo sistema. */
 export function saveReport(doc: jsPDF, slug: string, scope: string): void {
-  doc.save(`${slug}_${scope.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
+  doc.save(`${buildReportFilename(slug, scope)}.pdf`)
 }

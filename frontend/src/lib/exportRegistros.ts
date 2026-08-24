@@ -3,7 +3,7 @@ import * as XLSX from '@e965/xlsx'
 import { formatCurrency } from './formatters'
 import {
   createReport, drawMetaRow, drawKpiRow, drawFooter, drawCompactBand,
-  baseTableStyles, nowStamp, saveReport,
+  baseTableStyles, nowStamp, saveReport, buildReportFilename,
   INK, WHITE, MARGIN_X, type RGB,
 } from './pdfReport'
 
@@ -116,5 +116,5 @@ export function exportRegistrosXLSX(d: RegistrosXLSX): void {
   ws['!cols'] = d.larguras.map((wch) => ({ wch }))
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, d.sheetName)
-  XLSX.writeFile(wb, `${d.slug}_${d.empresaLabel.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`)
+  XLSX.writeFile(wb, `${buildReportFilename(d.slug, d.empresaLabel)}.xlsx`)
 }

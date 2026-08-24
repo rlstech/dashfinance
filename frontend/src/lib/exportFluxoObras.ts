@@ -3,7 +3,7 @@ import type { FluxoPlanejamentoResponse, GrupoObras, Periodo } from '@/types'
 import { formatCurrency } from './formatters'
 import {
   createReport, drawMetaRow, drawKpiRow, drawFooter, drawCompactBand,
-  baseTableStyles, nowStamp,
+  baseTableStyles, nowStamp, buildReportFilename,
   INK, AMBER, POSITIVE, NEGATIVE, WHITE, ZEBRA, MARGIN_X,
   type RGB, type ReportHandle,
 } from './pdfReport'
@@ -342,9 +342,8 @@ export function exportFluxoObrasPDF(data: FluxoObrasExportData): void {
 
   drawFooter(r, `${grupo.nome} · ${periodoLabel}`)
 
-  const safeName = grupo.nome.replace(/[^a-zA-Z0-9]/g, '_')
   const periodoStr = colunas.length > 0
     ? `${colunas[0].label}_${colunas[colunas.length - 1].label}`.replace(/\//g, '')
     : String(periodo.anoInicio)
-  doc.save(`fluxo_obras_${safeName}_${periodoStr}.pdf`)
+  doc.save(`${buildReportFilename('fluxo_obras', grupo.nome, periodoStr)}.pdf`)
 }
