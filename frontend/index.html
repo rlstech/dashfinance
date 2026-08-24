@@ -7,7 +7,7 @@
     <title>DashFinance</title>
     <script>
       (() => {
-        const preference = localStorage.getItem('dashfinance-theme') || 'system'
+        const preference = localStorage.getItem('dashfinance-theme') || 'light'
         const isDark = preference === 'dark' || (preference === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('theme-dark', isDark)
         document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
