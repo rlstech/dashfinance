@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, EyeOff, FileDown, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type RefObject } from 'react'
+import { ArrowLeft, ChevronDown, ChevronRight, EyeOff, FileDown, GripVertical, History, Lock, Pencil, Plus, RefreshCw, Search, Settings2, Share2, Trash2, X } from 'lucide-react'
 import {
   useAtualizarFluxoReal,
   useCreateGrupo,
@@ -24,6 +24,7 @@ import {
   useSaveObraPlanejamento,
   useSavePeriodoGrupo,
   useSetLancamentoCategoria,
+  useReorderCustoFinanceiroCategorias,
   useUpdateCustoFinanceiroCategoria,
   useUpdateCustoFinanceiroRegraPar,
   useUpdateGrupo,
@@ -1820,8 +1821,65 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
   const [gerenciarAberto, setGerenciarAberto] = useState(false)
   const [regrasParAberto, setRegrasParAberto] = useState(false)
   const [suprimidosAberto, setSuprimidosAberto] = useState(false)
+  const [ordemLocal, setOrdemLocal] = useState<number[] | null>(null)
+  const [categoriaArrastadaId, setCategoriaArrastadaId] = useState<number | null>(null)
+  const [categoriaSobrepostaId, setCategoriaSobrepostaId] = useState<number | null>(null)
   const currentUser = useAuthStore((s) => s.user)
-  const { meses, categorias, total_entradas, total_saidas, fluxo_liquido } = data
+  const { data: todasCategorias = [] } = useCustoFinanceiroCategorias()
+  const reorderCategorias = useReorderCustoFinanceiroCategorias()
+  const { meses, categorias: categoriasResposta, total_entradas, total_saidas, fluxo_liquido } = data
+  const categorias = useMemo(() => {
+    if (!ordemLocal) return categoriasResposta
+    const posicaoPorId = new Map(ordemLocal.map((id, index) => [id, index]))
+    return [...categoriasResposta].sort((a, b) => {
+      if (a.categoria_id === null) return 1
+      if (b.categoria_id === null) return -1
+      return (posicaoPorId.get(a.categoria_id) ?? Number.MAX_SAFE_INTEGER)
+        - (posicaoPorId.get(b.categoria_id) ?? Number.MAX_SAFE_INTEGER)
+    })
+  }, [categoriasResposta, ordemLocal])
+
+  useEffect(() => {
+    setOrdemLocal(null)
+  }, [categoriasResposta, todasCategorias])
+
+  function handleDropCategoria(destinoId: number) {
+    const origemId = categoriaArrastadaId
+    setCategoriaArrastadaId(null)
+    setCategoriaSobrepostaId(null)
+    if (origemId === null || origemId === destinoId || reorderCategorias.isPending) return
+
+    const idsVisiveis = categorias.flatMap((categoria) => categoria.categoria_id === null ? [] : [categoria.categoria_id])
+    const indiceOrigem = idsVisiveis.indexOf(origemId)
+    const indiceDestino = idsVisiveis.indexOf(destinoId)
+    if (indiceOrigem < 0 || indiceDestino < 0) return
+
+    const novaOrdemVisivel = [...idsVisiveis]
+    novaOrdemVisivel.splice(indiceOrigem, 1)
+    novaOrdemVisivel.splice(indiceDestino, 0, origemId)
+
+    const idsConfigurados = todasCategorias.map((categoria) => categoria.id)
+    const visiveisConfigurados = new Set(idsVisiveis)
+    if (idsConfigurados.length === 0 || !idsVisiveis.every((id) => idsConfigurados.includes(id))) return
+
+    let indiceVisivel = 0
+    const novaOrdemCompleta = idsConfigurados.map((id) => (
+      visiveisConfigurados.has(id) ? novaOrdemVisivel[indiceVisivel++] : id
+    ))
+    const ordemAnterior = ordemLocal
+    setOrdemLocal(novaOrdemVisivel)
+    reorderCategorias.mutate(
+      { categoriaIds: novaOrdemCompleta },
+      {
+        onError: () => {
+          setOrdemLocal(ordemAnterior)
+          alert('Não foi possível salvar a nova ordem das categorias. Tente novamente.')
+        },
+      },
+    )
+  }
+
+  const podeReordenar = !!currentUser?.is_admin && !reorderCategorias.isPending
   const n = meses.length
   const saldoOperacional = meses.map((s) => saldoOperacionalPorMes.get(`${s.ano}-${s.mes}`) ?? 0)
   const totalSaldoOperacional = saldoOperacional.reduce((s, v) => s + v, 0)
@@ -1895,19 +1953,59 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
               {categorias.map((cat, ci) => (
                 <tr
                   key={cat.categoria_id ?? 'nc'}
-                  className={ci % 2 === 0 ? 'bg-white' : 'bg-grid/20'}
+                  className={cn(
+                    ci % 2 === 0 ? 'bg-white' : 'bg-grid/20',
+                    categoriaArrastadaId === cat.categoria_id && 'opacity-40',
+                    categoriaSobrepostaId === cat.categoria_id && categoriaArrastadaId !== cat.categoria_id && 'ring-2 ring-inset ring-brand',
+                  )}
+                  onDragOver={(event) => {
+                    if (!podeReordenar || cat.categoria_id === null || categoriaArrastadaId === null) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    setCategoriaSobrepostaId(cat.categoria_id)
+                  }}
+                  onDragLeave={() => {
+                    if (categoriaSobrepostaId === cat.categoria_id) setCategoriaSobrepostaId(null)
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (cat.categoria_id !== null) handleDropCategoria(cat.categoria_id)
+                  }}
                 >
                   <td
-                    className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] truncate cursor-pointer hover:bg-brand/10"
+                    className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] cursor-pointer hover:bg-brand/10"
                     onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
                     title="Clique para ver todos os lançamentos do período"
                   >
-                    {cat.sinal && (
-                      <span className={cat.sinal === 'entrada' ? 'text-green-700' : 'text-red-700'}>
-                        {cat.sinal === 'entrada' ? '(+) ' : '(-) '}
-                      </span>
-                    )}
-                    {cat.nome}
+                    <div className="flex items-center min-w-0">
+                      {podeReordenar && cat.categoria_id !== null && (
+                        <button
+                          type="button"
+                          draggable
+                          className="mr-1 -ml-1 cursor-grab text-muted-foreground hover:text-brand active:cursor-grabbing"
+                          title="Arraste para reorganizar a categoria"
+                          aria-label={`Reorganizar ${cat.nome}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onDragStart={(event: DragEvent<HTMLButtonElement>) => {
+                            event.dataTransfer.effectAllowed = 'move'
+                            event.dataTransfer.setData('text/plain', String(cat.categoria_id))
+                            setCategoriaArrastadaId(cat.categoria_id)
+                          }}
+                          onDragEnd={() => {
+                            setCategoriaArrastadaId(null)
+                            setCategoriaSobrepostaId(null)
+                          }}
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {cat.sinal && (
+                        <span className={cat.sinal === 'entrada' ? 'text-green-700' : 'text-red-700'}>
+                          {cat.sinal === 'entrada' ? '(+) ' : '(-) '}
+                        </span>
+                      )}
+                      <span className="truncate">{cat.nome}</span>
+                    </div>
                   </td>
                   {cat.valores.map((v, vi) => (
                     <td

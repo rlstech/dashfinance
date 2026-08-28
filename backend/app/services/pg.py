@@ -1393,6 +1393,29 @@ async def update_custo_financeiro_categoria(
     }
 
 
+async def reorder_custo_financeiro_categorias(categoria_ids: list[int], user_id: int) -> None:
+    """Persiste uma ordem completa de categorias de Custo Financeiro."""
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                "SELECT id FROM custo_financeiro_categorias ORDER BY id FOR UPDATE"
+            )
+            existing_ids = [row["id"] for row in rows]
+            if (
+                len(categoria_ids) != len(existing_ids)
+                or len(set(categoria_ids)) != len(categoria_ids)
+                or set(categoria_ids) != set(existing_ids)
+            ):
+                raise ValueError("A lista de categorias deve conter cada categoria cadastrada uma única vez")
+
+            await conn.executemany(
+                """UPDATE custo_financeiro_categorias
+                   SET ordem=$2, updated_at=NOW(), updated_by=$3
+                   WHERE id=$1""",
+                [(categoria_id, ordem, user_id) for ordem, categoria_id in enumerate(categoria_ids, start=1)],
+            )
+
+
 async def delete_custo_financeiro_categoria(categoria_id: int) -> None:
     async with _pool.acquire() as conn:
         await conn.execute("DELETE FROM custo_financeiro_categorias WHERE id=$1", categoria_id)

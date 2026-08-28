@@ -27,6 +27,7 @@ from app.models.schemas import (
     LancamentoDetalhe,
     LancamentoSuprimido,
     PlanejamentoLogEntry,
+    ReordenarCustoFinanceiroCategoriasIn,
     RegraParTransferencia,
     RegraParTransferenciaIn,
     SaveObraPlanejamentoIn,
@@ -867,6 +868,16 @@ async def create_custo_financeiro_categoria(
         [d.model_dump() for d in body.descricoes],
         [c.model_dump() for c in body.contas],
     )
+
+
+@router.put("/custo-financeiro/categorias/ordem", status_code=204)
+async def reorder_custo_financeiro_categorias(
+    body: ReordenarCustoFinanceiroCategoriasIn, user: UserOut = Depends(require_admin),
+):
+    try:
+        await pg.reorder_custo_financeiro_categorias(body.categoria_ids, user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/custo-financeiro/categorias/{categoria_id}", response_model=CustoFinanceiroCategoria)

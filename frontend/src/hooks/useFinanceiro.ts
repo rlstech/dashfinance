@@ -293,6 +293,16 @@ export function useUpdateCustoFinanceiroCategoria() {
   })
 }
 
+export function useReorderCustoFinanceiroCategorias() {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, { categoriaIds: number[] }>({
+    mutationFn: async ({ categoriaIds }) => {
+      await api.put('/fluxo-obras/custo-financeiro/categorias/ordem', { categoria_ids: categoriaIds })
+    },
+    onSettled: () => invalidateCustoFinanceiro(queryClient),
+  })
+}
+
 export function useDeleteCustoFinanceiroCategoria() {
   const queryClient = useQueryClient()
   return useMutation<void, Error, number>({

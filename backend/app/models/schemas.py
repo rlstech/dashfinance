@@ -192,6 +192,10 @@ class CustoFinanceiroCategoriaIn(BaseModel):
     contas: list[LancamentoConta] = []
 
 
+class ReordenarCustoFinanceiroCategoriasIn(BaseModel):
+    categoria_ids: list[int]
+
+
 class CustoFinanceiroCategoriaLinha(BaseModel):
     categoria_id: int | None  # None = "Não Classificado"
     nome: str
