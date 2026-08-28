@@ -562,9 +562,11 @@ async def _lancamentos_classificados(
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Carrega transferências + controle financeiro do Redis e resolve a categoria de cada lançamento.
     Transferências: override manual > regra por par de conta (Mútuo/CG/Aporte/Interno) > não
-    classificado. "Interno" (anular) suprime o lançamento por completo, a menos que já exista um
-    override manual explícito para ele — nesse caso ele é acumulado em `suprimidos` (junto com o
-    rótulo da regra que o suprimiu) em vez de descartado, para permitir reincluí-lo manualmente.
+    classificado. Em transferências da mesma empresa, uma regra especial real em uma ponta emite
+    somente a ponta de caixa; sem regra real, o movimento continua interno e não aparece no card.
+    "Interno" (anular) suprime o lançamento por completo, a menos que já exista um override manual
+    explícito para ele — nesse caso ele é acumulado em `suprimidos` (junto com o rótulo da regra
+    que o suprimiu) em vez de descartado, para permitir reincluí-lo manualmente.
     Controle financeiro: sempre forçado pelo sentido (entrada > Receitas financeiras, saída > Despesas
     financeiras), ignorando override manual."""
     transf_raw: list[dict] = await get_cached("dash:transferencias:all") or []
@@ -603,6 +605,8 @@ async def _lancamentos_classificados(
             continue
 
         par = None
+        par_o = None
+        par_d = None
         if item["tipo"] == "transferencia":
             o, d = item.get("origem"), item.get("destino")
             if o and d:
@@ -620,6 +624,32 @@ async def _lancamentos_classificados(
                     par = par_o or par_d
 
         override_id = overrides.get(item["id"])
+
+        if item["tipo"] == "transferencia":
+            o, d = item.get("origem"), item.get("destino")
+            mesma_empresa = bool(o and d and o["empresa"] and o["empresa"] == d["empresa"])
+            if mesma_empresa:
+                regra_real_origem = bool(par_o and not par_o["anular"])
+                regra_real_destino = bool(par_d and not par_d["anular"])
+
+                # Transferência comum entre contas da mesma empresa continua fora do card.
+                # Uma regra Interno explícita é tratada abaixo para continuar disponível no modal
+                # de suprimidos; uma regra real tem prioridade sobre ela.
+                if not regra_real_origem and not regra_real_destino and par is None:
+                    continue
+
+                # Para conta especial (CG, mútuo, empréstimo bancário etc.), a conta especial não
+                # representa o caixa operacional. Mantém apenas a perna da conta real, cujo sentido
+                # é o que deve receber a categoria da regra especial. Se ambas as pontas forem
+                # especiais reais, preserva as duas para não perder um fluxo entre financiamentos.
+                if regra_real_origem != regra_real_destino:
+                    perna_conta_especial = (
+                        (regra_real_origem and item["sentido"] == "saida")
+                        or (regra_real_destino and item["sentido"] == "entrada")
+                    )
+                    if perna_conta_especial and override_id is None:
+                        continue
+
         if par and par["anular"] and override_id is None:
             suprimidos.append({**item, "categoria_id": None, "_dt": dt, "rotulo": par.get("rotulo")})
             continue

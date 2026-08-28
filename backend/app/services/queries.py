@@ -39,25 +39,6 @@ def _is_blocked_conta(empresa: str, banco: str, conta: str) -> bool:
     return conta in BLOCKED_CONTAS.get(empresa, {}).get(banco, set())
 
 
-# Contas de controle de empréstimo de mútuo (aporte/retirada de sócio ou familiar), por
-# (banco, conta) — independem da empresa. Uma Transferência Bancária envolvendo uma dessas contas
-# não é uma transferência interna: representa dinheiro entrando/saindo da empresa vindo de fora
-# (o sócio), então só a perna da conta "real" deve ser emitida — a perna da conta de mútuo é
-# suprimida para não duplicar o valor nem deixá-lo se cancelar como se fosse uma transferência comum.
-MUTUO_CONTAS: set[tuple[str, str]] = {
-    ("70", "46032"),
-    ("341", "19721-2"),
-    ("341", "30333-1"),
-    ("341", "14632-6"),
-    ("998", "12190-7"),
-    ("998", "321-2"),
-    ("998", "444-1"),
-    ("998", "50249-9"),
-    ("998", "555-1"),
-    ("998", "13000360-7"),
-}
-
-
 def _lancamento_id(
     tipo: str, empresa: str, banco: str, conta: str,
     data: str, valor: float, descricao: str, sentido: str, occurrence: int,
@@ -360,24 +341,11 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
         origem = {"empresa": emp_deb, "banco": banco_deb, "conta": conta_deb}
         destino = {"empresa": emp_cred, "banco": banco_cred, "conta": conta_cred}
 
-        # Transferência envolvendo conta de mútuo (sócio): emite só a perna da conta "real", já
-        # que a de mútuo não representa caixa da empresa — evita duplicar/cancelar o valor (ver
-        # MUTUO_CONTAS). Quando as duas pernas são de mútuo, mantém o comportamento padrão (emite
-        # as duas), pois não há conta "real" para eleger nesse caso raro.
-        deb_e_mutuo = (banco_deb, conta_deb) in MUTUO_CONTAS
-        cred_e_mutuo = (banco_cred, conta_cred) in MUTUO_CONTAS
-        suprimir_saida = deb_e_mutuo and not cred_e_mutuo
-        suprimir_entrada = cred_e_mutuo and not deb_e_mutuo
-
-        # Transferência comum (sem conta de mútuo envolvida) entre contas da mesma empresa é
-        # puramente interna — não representa entrada/saída real de caixa da empresa, então não
-        # aparece no Custo Financeiro. Entre empresas diferentes ela continua aparecendo (as duas
-        # pernas), pois é um fluxo real entre as entidades analisadas.
-        if not deb_e_mutuo and not cred_e_mutuo and emp_deb and emp_deb == emp_cred:
-            suprimir_saida = True
-            suprimir_entrada = True
-
-        if emp_deb and not suprimir_saida:
+        # A extração preserva sempre as duas pontas. A decisão de exibir apenas a ponta de caixa,
+        # anular uma transferência interna ou classificá-la é feita no Custo Financeiro, onde as
+        # regras de Conta Especial configuradas no PostgreSQL estão disponíveis. Isso evita que
+        # uma nova conta especial seja descartada antes de suas regras poderem ser aplicadas.
+        if emp_deb:
             key = ("transferencia", emp_deb, banco_deb, conta_deb, data, valor, descricao, "saida")
             seen[key] = seen.get(key, 0) + 1
             result.append({
@@ -394,7 +362,7 @@ def get_transferencias(de: str = "2020-01-01", ate: str = "2030-12-31") -> list[
                 "destino": destino,
             })
 
-        if emp_cred and not suprimir_entrada:
+        if emp_cred:
             key = ("transferencia", emp_cred, banco_cred, conta_cred, data, valor, descricao, "entrada")
             seen[key] = seen.get(key, 0) + 1
             result.append({
