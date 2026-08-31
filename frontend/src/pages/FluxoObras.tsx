@@ -1971,7 +1971,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
                 <tr
                   key={cat.categoria_id ?? 'nc'}
                   className={cn(
-                    ci % 2 === 0 ? 'bg-white' : 'bg-grid/20',
+                    ci % 2 === 0 ? 'bg-white' : 'bg-[color-mix(in_srgb,hsl(var(--border))_20%,hsl(var(--card)))]',
                     categoriaArrastadaId === cat.categoria_id && 'opacity-40',
                     categoriaSobrepostaId === cat.categoria_id && categoriaArrastadaId !== cat.categoria_id && 'ring-2 ring-inset ring-brand',
                   )}
@@ -1990,7 +1990,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
                   }}
                 >
                   <td
-                    className="px-3 py-1 sticky left-0 bg-inherit font-medium text-dark max-w-[220px] cursor-pointer hover:bg-brand/10"
+                    className="px-3 py-1 sticky left-0 z-10 bg-inherit font-medium text-dark max-w-[220px] cursor-pointer hover:bg-brand/10"
                     onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
                     title="Clique para ver todos os lançamentos do período"
                   >
@@ -2060,7 +2060,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
 
               {/* Rodapé com totais */}
               <tr className="bg-dark text-white font-black border-t-2 border-dark">
-                <td className="px-3 py-1.5 sticky left-0 bg-dark text-[10px] uppercase tracking-widest">Total Entradas</td>
+                <td className="px-3 py-1.5 sticky left-0 z-10 bg-dark text-[10px] uppercase tracking-widest">Total Entradas</td>
                 {Array.from({ length: n }).map((_, i) => {
                   const v = categorias.reduce((s, c) => s + (c.valores[i] > 0 ? c.valores[i] : 0), 0)
                   return (
@@ -2071,8 +2071,8 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
                 })}
                 <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30 text-green-300">{formatCurrency(total_entradas)}</td>
               </tr>
-              <tr className="bg-dark/80 text-white font-black">
-                <td className="px-3 py-1.5 sticky left-0 bg-dark/80 text-[10px] uppercase tracking-widest">Total Saídas</td>
+              <tr className="bg-[color-mix(in_srgb,hsl(var(--foreground))_80%,hsl(var(--card)))] text-white font-black">
+                <td className="px-3 py-1.5 sticky left-0 z-10 bg-[color-mix(in_srgb,hsl(var(--foreground))_80%,hsl(var(--card)))] text-[10px] uppercase tracking-widest">Total Saídas</td>
                 {Array.from({ length: n }).map((_, i) => {
                   const v = categorias.reduce((s, c) => s + (c.valores[i] < 0 ? c.valores[i] : 0), 0)
                   return (
@@ -2083,9 +2083,9 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
                 })}
                 <td className="px-1 py-1.5 text-right tabular-nums border-l-2 border-white/30 text-red-300">{formatCurrency(-total_saidas)}</td>
               </tr>
-              <tr className="bg-dark/60 text-white font-bold">
+              <tr className="bg-[color-mix(in_srgb,hsl(var(--foreground))_60%,hsl(var(--card)))] text-white font-bold">
                 <td
-                  className="px-3 py-1.5 sticky left-0 bg-dark/60 text-[10px] uppercase tracking-widest"
+                  className="px-3 py-1.5 sticky left-0 z-10 bg-[color-mix(in_srgb,hsl(var(--foreground))_60%,hsl(var(--card)))] text-[10px] uppercase tracking-widest"
                   title="Receita Realizada − Custo Real do Consolidado Operacional do Grupo"
                 >
                   Saldo Operacional (Consolidado)
@@ -2101,7 +2101,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
               </tr>
               <tr className="bg-brand text-white font-black text-sm">
                 <td
-                  className="px-3 py-2 sticky left-0 bg-brand text-[10px] uppercase tracking-widest"
+                  className="px-3 py-2 sticky left-0 z-10 bg-brand text-[10px] uppercase tracking-widest"
                   title="Fluxo financeiro do período + Saldo do Mês do Consolidado Operacional do Grupo"
                 >
                   Fluxo do Período
