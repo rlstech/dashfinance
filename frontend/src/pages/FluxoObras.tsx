@@ -1123,16 +1123,21 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
   const [showHist, setShowHist] = useState(false)
 
   // Rascunho local do previsto + valores globais
-  const [custoPrev, setCustoPrev] = useState<number[]>(() => meses.map((m) => m.custo_previsto))
-  const [receitaPrev, setReceitaPrev] = useState<number[]>(() => meses.map((m) => m.receita_prevista))
-  const [custoGlobal, setCustoGlobal] = useState<number>(data.custo_global)
-  const [receitaGlobal, setReceitaGlobal] = useState<number>(data.receita_global)
+  const [custoPrevState, setCustoPrev] = useState<number[]>(() => meses.map((m) => m.custo_previsto))
+  const [receitaPrevState, setReceitaPrev] = useState<number[]>(() => meses.map((m) => m.receita_prevista))
+  const [custoGlobalState, setCustoGlobal] = useState<number>(data.custo_global)
+  const [receitaGlobalState, setReceitaGlobal] = useState<number>(data.receita_global)
 
-  // Reinicializa quando os dados do servidor mudam (período, novo snapshot salvo, etc.)
-  // Feito durante o render (não em useEffect) para que custoPrev/receitaPrev nunca
-  // fiquem, nem por um único render, com tamanho diferente do array `meses` recebido
-  // via props — o que aconteceria ao trocar o ano do período (useEffect só roda após
-  // o commit) e causava "Cannot read properties of undefined (reading 'ano')".
+  // Reinicializa quando os dados do servidor mudam (período, novo snapshot salvo, etc.).
+  // O ajuste é disparado durante o render (não em useEffect, que só roda após o commit),
+  // mas chamar os setters aqui não muda o valor das variáveis de estado nesta MESMA
+  // execução — só a partir do próximo render. Por isso os valores efetivamente usados
+  // abaixo (custoPrev/receitaPrev/custoGlobal/receitaGlobal) são recalculados na hora
+  // sempre que a sincronização é necessária, em vez de ler o estado (potencialmente
+  // ainda desatualizado, com tamanho diferente de `meses`) diretamente. Sem isso, a
+  // troca de ano do período podia deixar custoPrev/receitaPrev com o tamanho do
+  // período anterior e a tabela lançava "Cannot read properties of undefined
+  // (reading 'ano')" ao indexar o novo array `meses` (mais curto) com esse tamanho antigo.
   const serverSig = useMemo(
     () => JSON.stringify({
       c: meses.map((m) => m.custo_previsto),
@@ -1142,7 +1147,8 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
     [meses, data.custo_global, data.receita_global],
   )
   const [syncedSig, setSyncedSig] = useState(serverSig)
-  if (serverSig !== syncedSig) {
+  const needsSync = serverSig !== syncedSig
+  if (needsSync) {
     setSyncedSig(serverSig)
     setCustoPrev(meses.map((m) => m.custo_previsto))
     setReceitaPrev(meses.map((m) => m.receita_prevista))
@@ -1151,6 +1157,12 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
       ? r2(meses.reduce((s, m) => s + m.receita_prevista, 0))
       : data.receita_global)
   }
+  const custoPrev = needsSync ? meses.map((m) => m.custo_previsto) : custoPrevState
+  const receitaPrev = needsSync ? meses.map((m) => m.receita_prevista) : receitaPrevState
+  const custoGlobal = needsSync ? data.custo_global : custoGlobalState
+  const receitaGlobal = needsSync
+    ? (especial ? r2(meses.reduce((s, m) => s + m.receita_prevista, 0)) : data.receita_global)
+    : receitaGlobalState
 
   // Mapa de histórico por célula
   const histMap = useMemo(() => {
