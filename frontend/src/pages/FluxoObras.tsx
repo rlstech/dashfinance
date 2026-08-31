@@ -1990,7 +1990,7 @@ function CustoFinanceiroGrupo({ data, grupoId, periodo, saldoOperacionalPorMes }
                   }}
                 >
                   <td
-                    className="px-3 py-1 sticky left-0 z-10 bg-inherit font-medium text-dark max-w-[220px] cursor-pointer hover:bg-brand/10"
+                    className="px-3 py-1 sticky left-0 z-10 bg-inherit font-medium text-dark max-w-[220px] cursor-pointer hover:bg-[color-mix(in_srgb,hsl(var(--brand))_10%,hsl(var(--card)))]"
                     onClick={() => setDetalhe({ id: cat.categoria_id ?? CATEGORIA_NAO_CLASSIFICADA, nome: cat.nome })}
                     title="Clique para ver todos os lançamentos do período"
                   >
