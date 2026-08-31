@@ -1129,6 +1129,10 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
   const [receitaGlobal, setReceitaGlobal] = useState<number>(data.receita_global)
 
   // Reinicializa quando os dados do servidor mudam (período, novo snapshot salvo, etc.)
+  // Feito durante o render (não em useEffect) para que custoPrev/receitaPrev nunca
+  // fiquem, nem por um único render, com tamanho diferente do array `meses` recebido
+  // via props — o que aconteceria ao trocar o ano do período (useEffect só roda após
+  // o commit) e causava "Cannot read properties of undefined (reading 'ano')".
   const serverSig = useMemo(
     () => JSON.stringify({
       c: meses.map((m) => m.custo_previsto),
@@ -1137,15 +1141,16 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
     }),
     [meses, data.custo_global, data.receita_global],
   )
-  useEffect(() => {
+  const [syncedSig, setSyncedSig] = useState(serverSig)
+  if (serverSig !== syncedSig) {
+    setSyncedSig(serverSig)
     setCustoPrev(meses.map((m) => m.custo_previsto))
     setReceitaPrev(meses.map((m) => m.receita_prevista))
     setCustoGlobal(data.custo_global)
     setReceitaGlobal(especial
       ? r2(meses.reduce((s, m) => s + m.receita_prevista, 0))
       : data.receita_global)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverSig])
+  }
 
   // Mapa de histórico por célula
   const histMap = useMemo(() => {
