@@ -112,27 +112,36 @@ async def get_todas(
         plano[yr] = {ob: {r["mes"]: r for r in rows} for ob, rows in bulk.items()}
 
     globais = await pg.get_obra_global(grupo_id, obras)
+    totais = await pg.get_planejamento_soma_total(grupo_id, obras)
 
-    return [
-        FluxoPlanejamentoResponse(
+    resultado = []
+    for obra in obras:
+        custo_dentro = 0.0
+        receita_dentro = 0.0
+        meses_obra = []
+        for (ano, mes) in slots:
+            row = plano.get(ano, {}).get(obra, {}).get(mes, {})
+            custo = float(row.get("custo_previsto", 0))
+            receita = float(row.get("receita_prevista", 0))
+            custo_dentro += custo
+            receita_dentro += receita
+            meses_obra.append(FluxoMesRow(
+                mes=mes, ano=ano,
+                custo_previsto=custo, receita_prevista=receita,
+                custo_real=0.0, receita_realizada=0.0,
+            ))
+
+        total_obra = totais.get(obra, {})
+        resultado.append(FluxoPlanejamentoResponse(
             obra_codigo=obra,
             ano=yi,
             custo_global=globais.get(obra, {}).get("custo_global", 0.0),
             receita_global=globais.get(obra, {}).get("receita_global", 0.0),
-            meses=[
-                FluxoMesRow(
-                    mes=mes,
-                    ano=ano,
-                    custo_previsto=float(plano.get(ano, {}).get(obra, {}).get(mes, {}).get("custo_previsto", 0)),
-                    receita_prevista=float(plano.get(ano, {}).get(obra, {}).get(mes, {}).get("receita_prevista", 0)),
-                    custo_real=0.0,
-                    receita_realizada=0.0,
-                )
-                for (ano, mes) in slots
-            ],
-        )
-        for obra in obras
-    ]
+            meses=meses_obra,
+            custo_previsto_fora_periodo=round(total_obra.get("custo_total", 0.0) - custo_dentro, 2),
+            receita_prevista_fora_periodo=round(total_obra.get("receita_total", 0.0) - receita_dentro, 2),
+        ))
+    return resultado
 
 
 @router.get("/grupos-totais-previstos", response_model=dict[int, GrupoTotaisPrevistos])
@@ -445,8 +454,25 @@ async def save_obra_planejamento(
     if not await pg.can_user_edit_grupo(grupo_id, user.id, user.is_admin):
         raise HTTPException(status_code=403, detail="Sem permissão de edição neste grupo")
 
-    soma_custo = round(sum(m.custo_previsto for m in body.meses), 2)
-    soma_receita = round(sum(m.receita_prevista for m in body.meses), 2)
+    # A validação precisa considerar TODOS os meses já lançados para a obra,
+    # não só os enviados no payload (que refletem apenas o período filtrado
+    # na tela) — senão a conferência contra o valor global fica incompleta.
+    existentes = await pg.get_planejamento_obra(grupo_id, obra_codigo)
+    merged: dict[tuple[int, int], dict] = {
+        (r["ano"], r["mes"]): {
+            "custo_previsto": float(r["custo_previsto"]),
+            "receita_prevista": float(r["receita_prevista"]),
+        }
+        for r in existentes
+    }
+    for m in body.meses:
+        merged[(m.ano, m.mes)] = {
+            "custo_previsto": m.custo_previsto,
+            "receita_prevista": m.receita_prevista,
+        }
+
+    soma_custo = round(sum(v["custo_previsto"] for v in merged.values()), 2)
+    soma_receita = round(sum(v["receita_prevista"] for v in merged.values()), 2)
     custo_global = round(body.custo_global, 2)
     receita_global = round(body.receita_global, 2)
 

@@ -885,13 +885,14 @@ interface GlobalFieldProps {
   label: string
   value: number
   soma: number
+  foraPeriodo?: number
   onChange: (v: number) => void
   onDistribuir: () => void
   disabled?: boolean
   readOnly?: boolean
 }
 
-function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, readOnly }: GlobalFieldProps) {
+function GlobalField({ label, value, soma, foraPeriodo, onChange, onDistribuir, disabled, readOnly }: GlobalFieldProps) {
   const [editing, setEditing] = useState(false)
   const [raw, setRaw] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -967,6 +968,11 @@ function GlobalField({ label, value, soma, onChange, onDistribuir, disabled, rea
           </span>
         )}
       </div>
+      {!!foraPeriodo && (
+        <span className="text-[10px] text-muted-foreground/70">
+          (inclui {formatCurrency(foraPeriodo)} de meses fora do período selecionado)
+        </span>
+      )}
     </div>
   )
 }
@@ -1173,8 +1179,14 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
     return m
   }, [logs])
 
-  const somaCusto = r2(custoPrev.reduce((s, v) => s + v, 0))
-  const somaReceita = r2(receitaPrev.reduce((s, v) => s + v, 0))
+  // A soma exibida/validada precisa incluir os meses já lançados fora do
+  // período filtrado na tela — senão a conferência contra o valor global
+  // fica incompleta sempre que o filtro de período não cobre todo o
+  // histórico da obra (ver GET /fluxo-obras/todas).
+  const custoForaPeriodo = data.custo_previsto_fora_periodo ?? 0
+  const receitaForaPeriodo = especial ? 0 : (data.receita_prevista_fora_periodo ?? 0)
+  const somaCusto = r2(custoPrev.reduce((s, v) => s + v, 0) + custoForaPeriodo)
+  const somaReceita = r2(receitaPrev.reduce((s, v) => s + v, 0) + receitaForaPeriodo)
   const custoOk = Math.abs(r2(somaCusto - custoGlobal)) <= 0.01
   const receitaOk = especial ? true : Math.abs(r2(somaReceita - receitaGlobal)) <= 0.01
   const balanced = custoOk && receitaOk
@@ -1350,6 +1362,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
               label="Custo Previsto (Global)"
               value={custoGlobal}
               soma={somaCusto}
+              foraPeriodo={custoForaPeriodo}
               onChange={setCustoGlobal}
               onDistribuir={handleDistribuirCusto}
               disabled={!canEdit || save.isPending}
@@ -1358,6 +1371,7 @@ function ObraSection({ grupoId, data, canEdit, defaultCollapsed, especial, proje
               label={especial ? 'Receita Prevista (calculada)' : 'Receita Prevista (Global)'}
               value={receitaGlobal}
               soma={somaReceita}
+              foraPeriodo={receitaForaPeriodo}
               onChange={setReceitaGlobal}
               onDistribuir={handleDistribuirReceita}
               disabled={!canEdit || save.isPending}
@@ -2894,6 +2908,8 @@ export default function FluxoObras() {
         ano: periodo.anoInicio,
         custo_global: 0,
         receita_global: 0,
+        custo_previsto_fora_periodo: 0,
+        receita_prevista_fora_periodo: 0,
         meses,
         _greedyCount: greedyObras.length,
         _greedyEmpresas: grupoAtivo.empresas_greedy,

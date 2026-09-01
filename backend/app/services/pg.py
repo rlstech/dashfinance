@@ -616,6 +616,42 @@ async def get_planejamento_bulk(obras: list[str], ano: int, grupo_id: int) -> di
     }
 
 
+async def get_planejamento_obra(grupo_id: int, obra_codigo: str) -> list[dict]:
+    """Todas as linhas de previsto já lançadas para a obra, em qualquer ano/mês
+    (sem escopo de período) — usada para conferir/validar a soma contra o valor
+    global independentemente do período selecionado na tela."""
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT ano, mes, custo_previsto, receita_prevista "
+            "FROM fluxo_planejamento WHERE grupo_id=$1 AND obra_codigo=$2",
+            grupo_id, obra_codigo,
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_planejamento_soma_total(grupo_id: int, obras: list[str]) -> dict[str, dict]:
+    """Retorna {obra_codigo: {custo_total, receita_total}}: soma de TODOS os
+    meses/anos já lançados para cada obra, independente de período."""
+    if not obras:
+        return {}
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT obra_codigo, "
+            "COALESCE(SUM(custo_previsto), 0) AS custo_total, "
+            "COALESCE(SUM(receita_prevista), 0) AS receita_total "
+            "FROM fluxo_planejamento WHERE grupo_id = $1 AND obra_codigo = ANY($2) "
+            "GROUP BY obra_codigo",
+            grupo_id, obras,
+        )
+    return {
+        r["obra_codigo"]: {
+            "custo_total": float(r["custo_total"]),
+            "receita_total": float(r["receita_total"]),
+        }
+        for r in rows
+    }
+
+
 # ── Grupos de Obras ───────────────────────────────────────────────────────────
 
 async def get_grupos(user_id: int, is_admin: bool) -> list[dict]:

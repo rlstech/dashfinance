@@ -160,6 +160,8 @@ export interface FluxoPlanejamentoResponse {
   meses: FluxoMesRow[]
   custo_global: number
   receita_global: number
+  custo_previsto_fora_periodo: number
+  receita_prevista_fora_periodo: number
 }
 
 export interface UpsertPlanejamentoIn {

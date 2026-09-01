@@ -79,6 +79,11 @@ class FluxoPlanejamentoResponse(BaseModel):
     meses: list[FluxoMesRow]
     custo_global: float = 0.0
     receita_global: float = 0.0
+    # Soma do previsto de meses já lançados para a obra mas fora do período
+    # pedido (não vêm em `meses`) — usada para conferir a soma total contra
+    # o valor global independentemente do período selecionado na tela.
+    custo_previsto_fora_periodo: float = 0.0
+    receita_prevista_fora_periodo: float = 0.0
 
 
 class UpsertPlanejamentoIn(BaseModel):
